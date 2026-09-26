@@ -161,9 +161,10 @@ class Window(QMainWindow):
         self.configure_button.clicked.connect(lambda: self._configure(check=False))
         self.check_button = QPushButton("Check")
         self.check_button.clicked.connect(lambda: self._configure(check=True))
-        for button in (self.flash_button, self.configure_button, self.check_button):
-            buttons.addWidget(button)
+        buttons.addWidget(self.configure_button)
+        buttons.addWidget(self.check_button)
         buttons.addStretch(1)
+        buttons.addWidget(self.flash_button)  # the main action, on the right
         form.addRow(buttons)
         column.addWidget(self.device_box)
 

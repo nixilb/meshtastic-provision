@@ -917,8 +917,16 @@ def _coerce(fd: FieldDescriptor, value: Any, path: str) -> Any:
     raise ProvisionError(f"{path}: expected an integer, got {value!r}")
 
 
+# Fields whose values never reach a log line or a difference shown to the
+# user (2026-09-26: the Wi-Fi password was written in clear to the log).
+SECRET_FIELDS = {"wifi_psk", "password"}
+
+
 def _show(fd: FieldDescriptor, value: Any) -> str:
-    """`value` of field `fd` as the profile would write it."""
+    """`value` of field `fd` as the profile would write it; secrets are
+    masked (set or empty only)."""
+    if fd.name in SECRET_FIELDS:
+        return "'***'" if value else "''"
     if fd.type == FieldDescriptor.TYPE_ENUM:
         entry = fd.enum_type.values_by_number.get(value)
         return entry.name if entry else str(value)
@@ -1291,13 +1299,25 @@ def run(params: RunParams, progress: Progress) -> RunResult:
 
     progress.step(STEP_VERIFY)
     if written:
-        iface = wait_for_node(params.port, progress, first_delay=REBOOT_GRACE_S)
-        progress.bar(0, 0)
-        try:
-            state = node_identity(iface)
-            remaining = compare(iface, profile)
-        finally:
-            iface.close()
+        # The firmware changes some settings by itself when others are set
+        # (2026-09-26: setting the region for the first time forces
+        # lora.ignore_mqtt on, AdminModule.cpp:841), so what still differs
+        # after the reboot is written again, once.
+        for attempt in (1, 2):
+            iface = wait_for_node(params.port, progress, first_delay=REBOOT_GRACE_S)
+            progress.bar(0, 0)
+            try:
+                state = node_identity(iface)
+                remaining = compare(iface, profile)
+                if not remaining or attempt == 2:
+                    break
+                progress.log(
+                    f"{len(remaining)} setting(s) changed back by the firmware, writing them again: "
+                    + ", ".join(d.path for d in remaining)
+                )
+                written += apply_profile(iface, profile, progress)
+            finally:
+                iface.close()
     else:
         progress.log("the node already matches the profile")
         remaining = []

@@ -20,9 +20,11 @@ from typing import Any
 
 import yaml
 from meshtastic.protobuf import channel_pb2, config_pb2
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, QObject, Qt, Signal
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (
+    QAbstractScrollArea,
+    QApplication,
     QCheckBox,
     QComboBox,
     QGridLayout,
@@ -445,10 +447,12 @@ class ProfileForm(QWidget):
         if field.kind == "enum":
             combo = QComboBox()
             combo.addItems(field.choices)
+            _no_wheel(combo)
             return combo
         if field.kind == "int":
             spin = QSpinBox()
             spin.setRange(0, field.maximum)
+            _no_wheel(spin)
             return spin
         if field.kind == "secret":
             return _SecretEdit()
@@ -497,6 +501,34 @@ class ProfileForm(QWidget):
         self.data = data
         self._set_dirty(False)
         return self.path
+
+
+class _WheelGuard(QObject):
+    """Lets the mouse wheel scroll the form instead of changing a value.
+
+    2026-09-26: scrolling the settings pane over a choice list or a number
+    changed it silently (the primary channel became SECONDARY, 3600 became
+    3599, 13 became 0) and the change went to the node. A widget now takes
+    the wheel only once clicked (focused)."""
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802 - Qt naming
+        if event.type() == QEvent.Type.Wheel and not watched.hasFocus():
+            # Hand the wheel to the scroll area around, which scrolls.
+            area = watched.parentWidget()
+            while area is not None and not isinstance(area, QAbstractScrollArea):
+                area = area.parentWidget()
+            if area is not None:
+                QApplication.sendEvent(area.viewport(), event)
+            return True
+        return False
+
+
+_WHEEL_GUARD = _WheelGuard()
+
+
+def _no_wheel(widget: QWidget) -> None:
+    widget.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+    widget.installEventFilter(_WHEEL_GUARD)
 
 
 class _SecretEdit(QWidget):

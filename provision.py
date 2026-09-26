@@ -536,8 +536,9 @@ class ChipInfo:
 
 class _EsptoolLog(TemplateLogger):
     """esptool's logging hooks (its `TemplateLogger` interface), forwarded
-    to a [`Progress`]. esptool prints through a process-wide logger, so it
-    is installed for the duration of a chip session."""
+    to a [`Progress`]. esptool prints through a process-wide logger: one
+    forwarder is installed once ([`_esptool_log`]) and each chip session
+    points it at its own Progress."""
 
     def __init__(self, progress: Progress) -> None:
         self.progress = progress
@@ -578,6 +579,26 @@ class _EsptoolLog(TemplateLogger):
         pass
 
 
+_ESPTOOL_FORWARDER: _EsptoolLog | None = None
+
+
+def _esptool_log() -> _EsptoolLog:
+    """The forwarder, installed as esptool's logger on first use.
+
+    2026-09-26: installing a new one per session failed from the second
+    session on ("'_LegacyLoggerAdapter' object has no attribute
+    'set_logger'"): esptool's `log` is a proxy to the installed logger, so
+    once ours was in place, `log.set_logger` reached our adapter instead of
+    esptool's own logger."""
+    global _ESPTOOL_FORWARDER
+    if _ESPTOOL_FORWARDER is None:
+        from esptool.logger import log
+
+        _ESPTOOL_FORWARDER = _EsptoolLog(Progress())
+        log.set_logger(_ESPTOOL_FORWARDER)
+    return _ESPTOOL_FORWARDER
+
+
 class _Chip:
     """A session with the ESP32 on a port: ROM bootloader, then esptool's
     stub at [`FLASH_BAUD`] with the flash attached. Restarts the chip and
@@ -590,9 +611,7 @@ class _Chip:
 
     def __enter__(self) -> "_Chip":
         from esptool.cmds import attach_flash, detect_chip, run_stub
-        from esptool.logger import log
-
-        log.set_logger(_EsptoolLog(self.progress))
+        _esptool_log().progress = self.progress
         try:
             esp = detect_chip(self.port, baud=115_200)
             esp = run_stub(esp)

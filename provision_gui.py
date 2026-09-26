@@ -320,33 +320,56 @@ class Window(QMainWindow):
         QTimer.singleShot(delay_ms, self._detect)
 
     def _ensure_access(self, device: str) -> bool:
-        """The port must be openable. A user outside its group is offered
-        to join it (the system asks for the password); a group granted
-        but not active yet is applied by restarting the tool under it."""
+        """The port must be openable. When it is not, a udev rule granting
+        USB serial ports to the logged-in user is offered (the system asks
+        for the password) and applies at once. Should it not be enough (no
+        systemd-logind), the port's group is offered, which needs a restart
+        of the tool with the group active."""
         try:
             provision.check_port_access(device)
             return True
         except provision.PortAccessError as err:
-            if not err.granted:
-                answer = QMessageBox.question(
-                    self,
-                    "Serial port access",
-                    f"{device} belongs to the group {err.group}, which your user is not in, so the node "
-                    f"cannot be reached.\n\nAdd you to that group now? The system asks for your password, "
-                    "then this tool restarts with the group active; no need to log out.",
-                )
-                if answer != QMessageBox.StandardButton.Yes:
-                    self._append(f"error: {err}", "error")
-                    return False
-                try:
-                    provision.add_user_to_group(err.group, graphical=True)
-                except ProvisionError as failure:
-                    QMessageBox.warning(self, "Serial port access", str(failure))
-                    return False
-                self._append(f"you are now in the group {err.group}")
-            self._append(f"restarting with the group {err.group} active")
-            self._restart_with_group(err.group)
+            first = err
+        answer = QMessageBox.question(
+            self,
+            "Serial port access",
+            f"{device} cannot be opened by your user, so the node cannot be reached.\n\n"
+            "Allow the user logged in at this desktop to use USB serial ports? The system "
+            "asks for your password; nothing needs to be restarted.",
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            self._append(f"error: {first}", "error")
             return False
+        try:
+            provision.install_udev_rule(graphical=True)
+            provision.check_port_access(device)
+            self._append("USB serial ports allowed for the logged-in user")
+            return True
+        except provision.PortAccessError:
+            self._append("the udev rule did not open the port: falling back to the group")
+        except ProvisionError as failure:
+            QMessageBox.warning(self, "Serial port access", str(failure))
+            return False
+        if not first.granted:
+            answer = QMessageBox.question(
+                self,
+                "Serial port access",
+                f"{device} belongs to the group {first.group}, which your user is not in.\n\n"
+                "Add you to that group now? The system asks for your password, then this tool "
+                "restarts with the group active.",
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                self._append(f"error: {first}", "error")
+                return False
+            try:
+                provision.add_user_to_group(first.group, graphical=True)
+            except ProvisionError as failure:
+                QMessageBox.warning(self, "Serial port access", str(failure))
+                return False
+            self._append(f"you are now in the group {first.group}")
+        self._append(f"restarting with the group {first.group} active")
+        self._restart_with_group(first.group)
+        return False
 
     def _restart_with_group(self, group: str) -> None:
         try:

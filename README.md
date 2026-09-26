@@ -19,9 +19,13 @@ cd meshtastic-provision
 uv run provision_cli.py --list-ports     # first run: creates .venv
 ```
 
-The user must be allowed to open the serial port: on Debian, Ubuntu and
-Raspberry Pi OS, `sudo usermod -aG dialout $USER` then log in again. The
-tools check it before anything else and say so when it is missing.
+The user must be allowed to open the serial port. The tools check it
+before anything else; when it is missing they offer to install a udev
+rule (`packaging/70-meshtastic-provision.rules`, through the system's
+password prompt) that lets the user logged in at the desktop open USB
+serial ports, effective at once. The `.deb` installs that rule itself. The
+older way, `sudo usermod -aG dialout $USER` and a new login, still works
+and is offered when the rule is not enough (no systemd-logind).
 
 Raspberry Pi: works on the 64-bit Raspberry Pi OS (aarch64; the compiled
 dependencies have wheels for it). The 32-bit OS would have to compile
@@ -186,9 +190,8 @@ packaging/build-linux.sh          # -> dist/meshtastic-provision_<version>_<arch
 The user installs it by double-clicking the file (the software centre) or
 with `sudo apt install ./meshtastic-provision_<version>_<arch>.deb`, then
 opens it from the menu. Plugging a node in is enough: the window detects
-it, and when the user is not allowed to open the serial port it offers to
-join the port's group through the system's password prompt and restarts
-itself with the group active. Nothing else to type.
+it; the package's udev rule lets the user open the serial port without any
+group or password. Nothing to type.
 
 The package holds Python, Qt and the libraries (about 200 MB installed,
 66 MB to download). `packaging/` has the PyInstaller spec, the menu entry

@@ -98,23 +98,36 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _ensure_access(port: str, assume_yes: bool) -> None:
-    """The port must be openable. A group granted but not active yet is
-    applied by restarting under it; a missing one is offered (`sudo`)."""
+    """The port must be openable. Offers the udev rule (sudo), which applies
+    at once; then the port's group, which needs a restart under it."""
     if not os.path.exists(port):
         return  # reported later, with the plug-in hint
     try:
         provision.check_port_access(port)
+        return
     except provision.PortAccessError as err:
-        if not err.granted:
-            print(f"{port} belongs to the group {err.group}, which your user is not in.")
-            if not assume_yes:
-                answer = input(f"Add you to {err.group} now with sudo? Type 'yes' to continue: ")
-                if answer.strip().lower() != "yes":
-                    raise
-            provision.add_user_to_group(err.group, graphical=False)
-            print(f"you are now in the group {err.group}")
-        print(f"restarting with the group {err.group} active", flush=True)
-        provision.relaunch_with_group(err.group)  # replaces this process
+        first = err
+    print(f"{port} cannot be opened by your user.")
+    if not assume_yes:
+        answer = input("Allow the logged-in user to use USB serial ports (udev rule, sudo)? Type 'yes': ")
+        if answer.strip().lower() != "yes":
+            raise first
+    provision.install_udev_rule(graphical=False)
+    try:
+        provision.check_port_access(port)
+        print("USB serial ports allowed for the logged-in user")
+        return
+    except provision.PortAccessError:
+        print("the udev rule did not open the port: falling back to the group")
+    if not first.granted:
+        if not assume_yes:
+            answer = input(f"Add you to the group {first.group} now with sudo? Type 'yes': ")
+            if answer.strip().lower() != "yes":
+                raise first
+        provision.add_user_to_group(first.group, graphical=False)
+        print(f"you are now in the group {first.group}")
+    print(f"restarting with the group {first.group} active", flush=True)
+    provision.relaunch_with_group(first.group)  # replaces this process
 
 
 def _ask(summary: str) -> bool:

@@ -41,8 +41,19 @@ mkdir -p "$pkg/DEBIAN" "$pkg/opt" "$pkg/usr/share/applications" "$pkg/usr/share/
 cp -r dist/meshtastic-provision "$pkg/opt/meshtastic-provision"
 cp packaging/meshtastic-provision.desktop "$pkg/usr/share/applications/"
 cp -r build/icons/* "$pkg/usr/share/icons/hicolor/"
-mkdir -p "$pkg/usr/share/icons/hicolor/scalable/apps"
+mkdir -p "$pkg/usr/share/icons/hicolor/scalable/apps" "$pkg/usr/lib/udev/rules.d"
 cp packaging/meshtastic-provision.svg "$pkg/usr/share/icons/hicolor/scalable/apps/"
+cp packaging/70-meshtastic-provision.rules "$pkg/usr/lib/udev/rules.d/"
+# After install: apply the udev rule to nodes already plugged in.
+cat > "$pkg/DEBIAN/postinst" <<'POSTINST'
+#!/bin/sh
+set -e
+if command -v udevadm >/dev/null 2>&1; then
+    udevadm control --reload-rules || true
+    udevadm trigger --subsystem-match=tty --action=add || true
+fi
+POSTINST
+chmod 755 "$pkg/DEBIAN/postinst"
 size_kb=$(du -sk "$pkg/opt" | cut -f1)
 cat > "$pkg/DEBIAN/control" <<CONTROL
 Package: meshtastic-provision

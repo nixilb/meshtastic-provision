@@ -1,0 +1,7 @@
+# udev rule of meshtastic-provision: let the user logged in at the desktop
+# open USB serial ports (the Meshtastic nodes' USB bridges and native USB),
+# without belonging to the dialout group. `uaccess` grants an ACL to the
+# active seat's user, which systemd-logind maintains on login and logout.
+# Installed by the .deb under /usr/lib/udev/rules.d, or by the window
+# under /etc/udev/rules.d when the port cannot be opened.
+SUBSYSTEM=="tty", KERNEL=="ttyUSB[0-9]*|ttyACM[0-9]*", TAG+="uaccess"

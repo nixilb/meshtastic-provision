@@ -224,21 +224,53 @@ def check_port_access(port: str) -> None:
     raise PortAccessError(port, group, granted=user_in_group(group))
 
 
+# The udev rule that lets the logged-in user open USB serial ports (see
+# packaging/70-meshtastic-provision.rules, the same text).
+UDEV_RULE_PATH = "/etc/udev/rules.d/70-meshtastic-provision.rules"
+UDEV_RULE = (
+    "# Installed by meshtastic-provision: the user logged in at the desktop may open\n"
+    "# USB serial ports (Meshtastic nodes) without belonging to the dialout group.\n"
+    'SUBSYSTEM=="tty", KERNEL=="ttyUSB[0-9]*|ttyACM[0-9]*", TAG+="uaccess"\n'
+)
+
+
+def _elevated(command: list[str], graphical: bool) -> None:
+    """Run `command` as root: through the desktop's password prompt
+    (`pkexec`) or `sudo` on the terminal."""
+    import shutil
+    import subprocess
+
+    elevate = "pkexec" if graphical else "sudo"
+    if shutil.which(elevate) is None:
+        raise ProvisionError(f"{elevate} is not installed: run as root: {' '.join(command)}")
+    result = subprocess.run([elevate, *command], capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip() or f"exit code {result.returncode}"
+        raise ProvisionError(f"{' '.join(command[:2])}: {detail}")
+
+
+def install_udev_rule(graphical: bool) -> None:
+    """Write [`UDEV_RULE`] to [`UDEV_RULE_PATH`] as root and apply it to the
+    devices already plugged in. The access takes effect at once, with no
+    new login and no restart, on desktops run by systemd-logind (Ubuntu,
+    Debian, Raspberry Pi OS)."""
+    import time
+
+    script = (
+        f"printf '%s' \"$1\" > {UDEV_RULE_PATH} && chmod 644 {UDEV_RULE_PATH} "
+        "&& udevadm control --reload-rules && udevadm trigger --subsystem-match=tty --action=add"
+    )
+    _elevated(["sh", "-c", script, "meshtastic-provision", UDEV_RULE], graphical)
+    time.sleep(1)  # udev applies the ACL asynchronously
+
+
 def add_user_to_group(group: str, graphical: bool) -> None:
     """`usermod -aG group user` with administrator rights: through the
     desktop's password prompt (`pkexec`) or `sudo` on the terminal."""
     import pwd
-    import shutil
-    import subprocess
 
     user = pwd.getpwuid(os.getuid()).pw_name
-    elevate = "pkexec" if graphical else "sudo"
-    if shutil.which(elevate) is None:
-        raise ProvisionError(f"{elevate} is not installed: run `sudo usermod -aG {group} {user}` yourself")
-    result = subprocess.run([elevate, "usermod", "-aG", group, user], capture_output=True, text=True, check=False)
-    if result.returncode != 0:
-        detail = (result.stderr or result.stdout).strip() or f"exit code {result.returncode}"
-        raise ProvisionError(f"could not add {user} to {group}: {detail}")
+    _elevated(["usermod", "-aG", group, user], graphical)
 
 
 def relaunch_with_group(group: str) -> None:

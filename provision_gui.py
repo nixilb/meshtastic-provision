@@ -296,9 +296,11 @@ class Window(QMainWindow):
         self.port.clear()
         for port in provision.serial_ports():
             self.port.addItem(str(port), port.device)
+        # 2026-09-26: with a placeholder text, QComboBox no longer selects
+        # its first item by itself; the port stayed unselected while
+        # listed, so neither detection nor the actions found it.
         index = self.port.findData(current)
-        if index >= 0:
-            self.port.setCurrentIndex(index)
+        self.port.setCurrentIndex(index if index >= 0 else (0 if self.port.count() else -1))
 
     def _watch_ports(self) -> None:
         """Every second: react to a port appearing or disappearing."""
@@ -396,7 +398,7 @@ class Window(QMainWindow):
     def _selected_port(self) -> str:
         device = self.port.currentData()
         if not device:
-            raise ProvisionError("no serial port selected: plug the node in and press Refresh")
+            raise ProvisionError("no node plugged in: plug it in over USB")
         return device
 
     def _load_lists(self) -> None:

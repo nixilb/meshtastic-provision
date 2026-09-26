@@ -45,8 +45,8 @@ from provision import FlashParams, Progress, ProvisionError, RunParams
 
 INTRO = (
     "Prepare a Meshtastic node plugged in over USB. Close meshtastic-desktop first: it holds the port. "
-    "Detect asks the node which board it is (a blank board cannot answer: choose it by hand) and reads "
-    "the chip. Flash erases the whole flash, installs the chosen firmware, then applies the settings on "
+    "A node plugged in is detected by itself: it says which board it is (a blank board cannot: choose it "
+    "by hand) and its chip is read. Flash erases the whole flash, installs the chosen firmware, then applies the settings on "
     "the right; the node restarts with a new private key, which other nodes will have to learn again. "
     "Configure only applies the settings to the node as it is; Check just reports the ones that differ."
 )
@@ -109,17 +109,12 @@ class Window(QMainWindow):
 
         device = QGroupBox("Node")
         form = QFormLayout(device)
-        port_row = QHBoxLayout()
         self.port = QComboBox()
-        port_row.addWidget(self.port, 1)
-        refresh = QPushButton("Refresh")
-        refresh.clicked.connect(self._refresh_ports)
-        port_row.addWidget(refresh)
-        self.detect_button = QPushButton("Detect")
-        self.detect_button.clicked.connect(self._detect)
-        port_row.addWidget(self.detect_button)
-        form.addRow("Port", port_row)
-        self.node_label = QLabel("not asked yet (press Detect)")
+        self.port.setPlaceholderText("plug the node in")
+        # A port picked by hand (several nodes plugged in) is detected too.
+        self.port.activated.connect(lambda _index: self._port_present(self.port.currentData(), delay_ms=0))
+        form.addRow("Port", self.port)
+        self.node_label = QLabel("waiting for a node")
         self.node_label.setWordWrap(True)
         form.addRow("Node", self.node_label)
         self.chip_label = QLabel("not read yet")
@@ -234,7 +229,7 @@ class Window(QMainWindow):
         self.bar_label.setText(label if total > 0 else "")
 
     def _set_busy(self, busy: bool) -> None:
-        for button in (self.flash_button, self.configure_button, self.check_button, self.detect_button):
+        for button in (self.flash_button, self.configure_button, self.check_button):
             button.setEnabled(not busy)
 
     def _set_lists(self, payload: object) -> None:
@@ -309,7 +304,7 @@ class Window(QMainWindow):
                 self._set_node(None)
                 self.chip = None
                 self.chip_label.setText("not read yet")
-                self.node_label.setText("not asked yet (plug the node in, or press Detect)")
+                self.node_label.setText("waiting for a node")
         for device in sorted(added):
             self._append(f"{device} plugged in")
             self.port.setCurrentIndex(self.port.findData(device))
@@ -377,7 +372,7 @@ class Window(QMainWindow):
 
     def _detect(self) -> None:
         if self.worker and self.worker.is_alive():
-            self._append("busy: press Detect once the current step is over")
+            self._append("busy: the node will be detected once the current step is over")
             return
 
         def work() -> None:

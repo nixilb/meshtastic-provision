@@ -39,13 +39,14 @@ refuse to start while another process does.
 uv run provision_gui.py
 ```
 
-Left, the node and the actions; right, the settings form. Pick the port
-(Refresh after plugging the node) and press Detect: it asks the node which
-board it is (a running firmware reports its build target, e.g.
-`heltec-v3`, and its MAC address), then reads the chip (family, MAC, flash
-size). The board list is reduced to the chip's family and the node's board
-is preselected. A blank board answers nothing: choose it by hand. Choose
-the firmware version, fill the settings, then:
+Left, the node and the actions; right, the settings form. Plug the node
+in: the window sees the port, asks the node which board it is (a running
+firmware reports its build target, e.g. `heltec-v3`, and its MAC address),
+then reads the chip (family, MAC, flash size). The board list is reduced to
+the chip's family and the node's board is preselected. A blank board
+answers nothing: choose it by hand. With several nodes plugged in, picking
+a port in the list detects that one. Choose the firmware version, fill the
+settings, then:
 
 - Flash: after a confirmation, erases the flash, installs the firmware, waits
   for the node to boot, applies the settings and verifies them. With the

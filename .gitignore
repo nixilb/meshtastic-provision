@@ -1,0 +1,9 @@
+# uv's virtual environment and lock of this machine.
+.venv/
+# Real profiles hold Wi-Fi and broker credentials; only the example is tracked.
+node-profile.yaml
+*.local.yaml
+# Settings backups exported before a flash.
+backups/
+__pycache__/
+*.pyc

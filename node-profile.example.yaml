@@ -1,0 +1,63 @@
+# Example profile for meshtastic-provision: the settings a node gets after
+# a fresh install, as the meshtastic-desktop app expects them (MQTT client
+# proxy on the public broker, region EU_868).
+#
+# Copy it to ~/.config/meshtastic/node-profile.yaml (the default the tools
+# look for), fill in the secrets and keep that copy out of any repository.
+#
+# Only the fields written here are compared and written; every other
+# setting keeps its value on the node. Field names, sections and enum
+# values are those of Meshtastic's protobufs (config.proto,
+# module_config.proto, channel.proto), in snake_case, as `meshtastic
+# --export-config` prints them. The `security` section and channel keys
+# (`psk`) are refused: the node keeps its own.
+
+# Node name (long) and short name (4 characters at most).
+owner: nixilb_01
+owner_short: NX01
+
+config:
+  lora:
+    region: EU_868
+    # Let packets that came in over MQTT reach the node and the app; a node
+    # with ignore_mqtt true decodes them and drops them silently.
+    ignore_mqtt: false
+    # Allow the node's packets to be forwarded to MQTT by other gateways.
+    config_ok_to_mqtt: true
+  device:
+    # POSIX time zone of the node's clock (Europe/Paris).
+    tzdef: "CET-1CEST,M3.5.0,M10.5.0/3"
+  network:
+    # Wi-Fi credentials for a later use; the radio stays on Bluetooth and
+    # USB (on an ESP32, Wi-Fi and Bluetooth exclude each other).
+    wifi_enabled: false
+    wifi_ssid: "MyNetwork"
+    wifi_psk: "change-me"
+
+module_config:
+  mqtt:
+    enabled: true
+    # Public broker and its public credentials (the firmware's defaults).
+    address: mqtt.meshtastic.org
+    username: meshdev
+    password: large4cats
+    encryption_enabled: true
+    root: msh/EU_868
+    # The app connects to the broker on the node's behalf.
+    proxy_to_client_enabled: true
+    # Hourly map reports would publish the node's position in clear; off.
+    map_reporting_enabled: false
+    map_report_settings:
+      publish_interval_secs: 3600
+      position_precision: 32
+
+channels:
+  # Primary channel (LongFast with the default key): send to and receive
+  # from MQTT, positions on it rounded to precision 13 (~1.5 km).
+  - index: 0
+    role: PRIMARY
+    settings:
+      uplink_enabled: true
+      downlink_enabled: true
+      module_settings:
+        position_precision: 13

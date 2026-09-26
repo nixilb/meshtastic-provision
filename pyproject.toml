@@ -1,0 +1,16 @@
+# Project metadata for `uv`: `uv run provision_gui.py` (or provision_cli.py)
+# creates the virtual environment, installs the dependencies and runs the
+# script. Python 3.13 is pinned because uv's own 3.13 build ships Tkinter,
+# which the system Python may lack.
+[project]
+name = "meshtastic-provision"
+version = "0.1.0"
+description = "Flash a Meshtastic node over USB and apply a settings profile"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "esptool>=5.0",
+    "meshtastic>=2.7",
+    "pyyaml>=6.0",
+    "requests>=2.32",
+    "pyserial>=3.5",
+]

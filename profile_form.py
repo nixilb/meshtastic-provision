@@ -352,7 +352,7 @@ class ProfileForm(QWidget):
     changes the file does not have."""
 
     changed = Signal()
-    located = Signal(object)  # geolocate.Fix or the error text
+    located = Signal(object)  # geolocate.Fix, (lat, lon, source) from a link, or the error text
 
     def __init__(self, path: Path, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -481,13 +481,60 @@ class ProfileForm(QWidget):
         self.locate_status = QLabel("")
         self.locate_status.setWordWrap(True)
         self.locate_status.setForegroundRole(QPalette.ColorRole.PlaceholderText)
+        # A Google Maps link pasted here fills latitude and longitude; the
+        # link itself is not kept.
+        self.map_link = QLineEdit()
+        self.map_link.setPlaceholderText("paste a Google Maps link to take its position")
+        link_tip = (
+            "<p>In Google Maps, find the place, then Share and Copy link (or copy the address "
+            "bar), and paste it here: latitude and longitude are taken from it. Short links "
+            "(maps.app.goo.gl) are opened to find the position.</p>"
+        )
+        self.map_link.setToolTip(link_tip)
+        link_label = QLabel("Google Maps link")
+        link_label.setToolTip(link_tip)
+        self.map_link.textChanged.connect(self._link_changed)
+        grid.addWidget(link_label, row, 1)
+        grid.addWidget(self.map_link, row, 2, 1, 2)
         buttons = QHBoxLayout()
         buttons.addWidget(self.locate_button)
         buttons.addWidget(self.map_button)
         buttons.addStretch(1)
-        grid.addLayout(buttons, row, 1, 1, 3)
-        grid.addWidget(self.locate_status, row + 1, 1, 1, 3)
+        grid.addLayout(buttons, row + 1, 1, 1, 3)
+        grid.addWidget(self.locate_status, row + 2, 1, 1, 3)
         self.located.connect(self._located)
+
+    def _link_changed(self, text: str) -> None:
+        text = text.strip()
+        if not text:
+            return
+        found = geolocate.coordinates_in(text)
+        if found:
+            self._set_position(*found, "from the Google Maps link")
+        elif geolocate.is_short_link(text):
+            self.locate_status.setText("Opening the short link…")
+
+            def work() -> None:
+                try:
+                    full = geolocate.follow(text)
+                    found = geolocate.coordinates_in(full)
+                    self.located.emit(found + ("from the Google Maps link",) if found else "the link holds no position")
+                except ProvisionError as err:
+                    self.located.emit(str(err))
+
+            threading.Thread(target=work, daemon=True).start()
+        else:
+            self.locate_status.setText(
+                "No position in this link: in Google Maps, click the exact place (not a named "
+                "place only), then copy the link"
+            )
+
+    def _set_position(self, latitude: float, longitude: float, source: str) -> None:
+        for key, value in (("latitude", latitude), ("longitude", longitude)):
+            row = self.rows[f"position.{key}"]
+            row.present.setChecked(True)
+            row.widget.setValue(value)  # type: ignore[attr-defined]
+        self.locate_status.setText(source)
 
     def _open_map(self) -> None:
         latitude = self.rows["position.latitude"].widget.value()  # type: ignore[attr-defined]
@@ -510,12 +557,10 @@ class ProfileForm(QWidget):
         self.locate_button.setEnabled(True)
         if isinstance(result, str):
             self.locate_status.setText(result)
-            return
-        for key, value in (("latitude", result.latitude), ("longitude", result.longitude)):  # type: ignore[union-attr]
-            row = self.rows[f"position.{key}"]
-            row.present.setChecked(True)
-            row.widget.setValue(value)  # type: ignore[attr-defined]
-        self.locate_status.setText(result.describe())  # type: ignore[union-attr]
+        elif isinstance(result, tuple):  # (latitude, longitude, source) from a link
+            self._set_position(*result)
+        else:
+            self._set_position(result.latitude, result.longitude, result.describe())  # type: ignore[union-attr]
 
     def _watch(self, field: Field, widget: QWidget) -> None:
         """Mark the form dirty on any edit of `widget`."""

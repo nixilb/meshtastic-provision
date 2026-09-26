@@ -104,3 +104,51 @@ def locate() -> Fix:
         return _by_wifi(session) or _by_ip(session)
     except (requests.RequestException, KeyError, ValueError) as err:
         raise ProvisionError(f"could not find this computer's position: {err}") from err
+
+
+# Coordinates in a Google Maps link, most precise first: the place's pin
+# (`!3d<lat>!4d<lon>` in the data part), a search or query
+# (`q=`/`query=`/`ll=`), then the map's centre (`@<lat>,<lon>,<zoom>z`).
+_COORDINATE_PATTERNS = (
+    r"!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)",
+    r"[?&](?:q|query|ll|center|destination)=(-?\d+(?:\.\d+)?)(?:,|%2C)\s*(-?\d+(?:\.\d+)?)",
+    r"/search/(-?\d+(?:\.\d+)?),\+?(-?\d+(?:\.\d+)?)",
+    r"@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)",
+)
+# Short links, which must be followed to reach the coordinates.
+_SHORT_HOSTS = ("maps.app.goo.gl", "goo.gl")
+
+
+def coordinates_in(url: str) -> tuple[float, float] | None:
+    """The latitude and longitude a Google Maps link points at, or None
+    when it holds none (a short link, a place name only)."""
+    import re
+    from urllib.parse import unquote
+
+    # A link through Google's consent page carries the real one encoded in
+    # its `continue=` parameter: decode before searching.
+    text = unquote(unquote(url))
+    for pattern in _COORDINATE_PATTERNS:
+        match = re.search(pattern, text)
+        if match:
+            latitude, longitude = float(match.group(1)), float(match.group(2))
+            if -90 <= latitude <= 90 and -180 <= longitude <= 180:
+                return latitude, longitude
+    return None
+
+
+def is_short_link(url: str) -> bool:
+    from urllib.parse import urlparse
+
+    return urlparse(url.strip()).hostname in _SHORT_HOSTS
+
+
+def follow(url: str) -> str:
+    """The full link a short one leads to (network)."""
+    session = requests.Session()
+    session.headers["User-Agent"] = USER_AGENT
+    try:
+        response = session.get(url.strip(), allow_redirects=True, timeout=TIMEOUT_S)
+    except requests.RequestException as err:
+        raise ProvisionError(f"could not open the link: {err}") from err
+    return response.url

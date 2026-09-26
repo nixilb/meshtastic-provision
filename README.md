@@ -20,7 +20,8 @@ uv run provision_cli.py --list-ports     # first run: creates .venv
 ```
 
 The user must be allowed to open the serial port: on Debian, Ubuntu and
-Raspberry Pi OS, `sudo usermod -aG dialout $USER` then log in again.
+Raspberry Pi OS, `sudo usermod -aG dialout $USER` then log in again. The
+tools check it before anything else and say so when it is missing.
 
 Raspberry Pi: works on the 64-bit Raspberry Pi OS (aarch64; the compiled
 dependencies have wheels for it). The 32-bit OS would have to compile
@@ -155,6 +156,13 @@ Rules:
 - The `security` section and channel keys (`psk`) are refused: the node
   keeps its own keys. Repeated and byte fields are not supported.
 - `network.wifi_psk` must be 8 characters or more (the firmware's rule).
+- `app`: meshtastic-desktop's own settings on this computer
+  (`~/.config/meshtastic/settings.json`), the booleans `auto_connect`,
+  `mqtt_observer`, `mqtt_observer_all_regions`, `map_world_nodes` and
+  `map_gateway_links`. They are written after the node, together with the
+  node's port as the address the app connects to (`last_address`), keeping
+  every other setting of the file. The app must not be running: it reads
+  the file at start-up only and rewrites it when it saves.
 
 Applying: the settings that differ are written inside one settings
 transaction (`begin_edit_settings` / `commit_edit_settings`), so the node
@@ -171,6 +179,7 @@ of remaining differences.
 | `provision_gui.py` | Qt window (PySide6) |
 | `profile_form.py` | The settings form of the window |
 | `node-profile.example.yaml` | Documented example profile |
+| `doc/node-setup.md` | The manual set-up of the first node, which the profile automates |
 | `~/.config/meshtastic/node-profile.yaml` | The settings: saved by the window, default profile of the command line |
 | `~/.config/meshtastic/backups/` | Settings exported before a flash (window) |
 | `~/.cache/meshtastic-provision/` | Downloaded firmware images |

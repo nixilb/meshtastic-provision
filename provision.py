@@ -68,7 +68,14 @@ REBOOT_GRACE_S = 8
 NODE_WAIT_S = 120
 
 # Sections of the profile the tools accept.
-PROFILE_KEYS = {"owner", "owner_short", "config", "module_config", "channels"}
+PROFILE_KEYS = {"owner", "owner_short", "config", "module_config", "channels", "app"}
+# meshtastic-desktop's settings a profile may set (`app` section): the
+# booleans of `~/.config/meshtastic/settings.json` that make the app use
+# the node and the broker (docs/node-setup.md, section 5).
+APP_SETTING_KEYS = {"auto_connect", "mqtt_observer", "mqtt_observer_all_regions", "map_world_nodes", "map_gateway_links"}
+APP_SETTINGS_PATH = (
+    Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "meshtastic" / "settings.json"
+)
 # Never taken from a profile: the node's own keys.
 FORBIDDEN_CONFIG_SECTIONS = {"security"}
 FORBIDDEN_CHANNEL_FIELDS = {"psk"}
@@ -155,11 +162,22 @@ def port_holders(port: str) -> list[tuple[int, str]]:
 
 
 def ensure_port_free(port: str) -> None:
-    """Refuse to go on while another process holds `port`: the app, the
-    meshtastic CLI or a serial monitor would break the flash or the
-    configuration."""
+    """Refuse to go on while `port` cannot be opened (the user is not in
+    its group) or another process holds it: the app, the meshtastic CLI or
+    a serial monitor would break the flash or the configuration."""
     if not os.path.exists(port):
         raise ProvisionError(f"{port} does not exist: is the node plugged in?")
+    if not os.access(port, os.R_OK | os.W_OK):
+        import grp
+
+        try:
+            group = grp.getgrgid(os.stat(port).st_gid).gr_name
+        except KeyError:
+            group = "dialout"
+        raise ProvisionError(
+            f"no permission to open {port}: add yourself to the group {group} "
+            f"(sudo usermod -aG {group} $USER), then log out and back in"
+        )
     holders = port_holders(port)
     if holders:
         names = ", ".join(f"{name} (pid {pid})" for pid, name in holders)
@@ -550,9 +568,12 @@ class Profile:
     config: dict[str, dict[str, Any]] = field(default_factory=dict)
     module_config: dict[str, dict[str, Any]] = field(default_factory=dict)
     channels: list[dict[str, Any]] = field(default_factory=list)
+    # meshtastic-desktop settings (see APP_SETTING_KEYS), applied to
+    # settings.json after the node.
+    app: dict[str, bool] = field(default_factory=dict)
 
     def is_empty(self) -> bool:
-        return not (self.owner or self.owner_short or self.config or self.module_config or self.channels)
+        return not (self.owner or self.owner_short or self.config or self.module_config or self.channels or self.app)
 
 
 def load_profile(path: Path) -> Profile:
@@ -600,7 +621,97 @@ def load_profile(path: Path) -> Profile:
     psk = profile.config.get("network", {}).get("wifi_psk")
     if psk is not None and len(str(psk)) < 8:
         raise ProvisionError(f"profile {path}: network.wifi_psk must be 8 characters or more")
+    app = data.get("app") or {}
+    if not isinstance(app, dict):
+        raise ProvisionError(f"profile {path}: app must be a mapping")
+    unknown = set(app) - APP_SETTING_KEYS
+    if unknown:
+        raise ProvisionError(f"profile {path}: app: unknown keys {sorted(unknown)} (accepted: {sorted(APP_SETTING_KEYS)})")
+    for key, value in app.items():
+        if not isinstance(value, bool):
+            raise ProvisionError(f"profile {path}: app.{key} must be true or false")
+    profile.app = app
     return profile
+
+
+# ---------------------------------------------------------------------------
+# meshtastic-desktop's own settings
+# ---------------------------------------------------------------------------
+
+
+def app_running() -> list[int]:
+    """PIDs of meshtastic-desktop: a native executable named `meshtastic`
+    (the Python CLI of the same name runs under python and is not it)."""
+    pids = []
+    for entry in os.scandir("/proc"):
+        if not entry.name.isdigit():
+            continue
+        try:
+            exe = os.readlink(os.path.join(entry.path, "exe"))
+        except OSError:
+            continue
+        if os.path.basename(exe) == "meshtastic":
+            pids.append(int(entry.name))
+    return pids
+
+
+def compare_app_settings(port: str, app: dict[str, bool]) -> list[Difference]:
+    """The app settings of the profile whose value in settings.json differs,
+    plus `last_address` when it is not the node's port."""
+    current = _read_app_settings()
+    diffs = []
+    wanted_address = f"s{port}"
+    if current.get("last_address") != wanted_address:
+        diffs.append(Difference("app.last_address", repr(current.get("last_address")), repr(wanted_address)))
+    for key, value in app.items():
+        if current.get(key) != value:
+            diffs.append(Difference(f"app.{key}", _show_bool(current.get(key)), _show_bool(value)))
+    return diffs
+
+
+def apply_app_settings(port: str, app: dict[str, bool], progress: Progress) -> list[Difference]:
+    """Write the profile's app settings and the node's port as the address
+    to connect to into settings.json, keeping everything else. The app
+    reads the file at start-up only and rewrites it when it saves, so it
+    must not be running."""
+    import json
+
+    diffs = compare_app_settings(port, app)
+    if not diffs:
+        progress.log("meshtastic-desktop is already set up for this node")
+        return diffs
+    pids = app_running()
+    if pids:
+        raise ProvisionError(f"meshtastic-desktop runs (pid {pids[0]}): stop it, its settings cannot be changed underneath it")
+    settings = _read_app_settings()
+    settings["last_address"] = f"s{port}"
+    settings.update(app)
+    APP_SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    tmp = APP_SETTINGS_PATH.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(APP_SETTINGS_PATH)
+    progress.log(f"meshtastic-desktop settings written ({APP_SETTINGS_PATH}): " + ", ".join(str(d) for d in diffs))
+    return diffs
+
+
+def _read_app_settings() -> dict[str, Any]:
+    import json
+
+    if not APP_SETTINGS_PATH.is_file():
+        return {}
+    try:
+        data = json.loads(APP_SETTINGS_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as err:
+        raise ProvisionError(f"{APP_SETTINGS_PATH}: {err}") from err
+    if not isinstance(data, dict):
+        raise ProvisionError(f"{APP_SETTINGS_PATH}: not a JSON object")
+    return data
+
+
+def _show_bool(value: Any) -> str:
+    if value is None:
+        return "unset"
+    return "true" if value else "false"
 
 
 def _coerce(fd: FieldDescriptor, value: Any, path: str) -> Any:
@@ -997,21 +1108,28 @@ def run(params: RunParams, progress: Progress) -> RunResult:
             return RunResult(state, [], [])
         if params.check_only:
             remaining = compare(iface, profile)
+            if profile.app:
+                remaining += compare_app_settings(params.port, profile.app)
             _report(remaining, progress)
             return RunResult(state, [], remaining)
         written = apply_profile(iface, profile, progress)
     finally:
         iface.close()
 
-    if not written:
+    if written:
+        iface = wait_for_node(params.port, progress, first_delay=REBOOT_GRACE_S)
+        try:
+            state = node_identity(iface)
+            remaining = compare(iface, profile)
+        finally:
+            iface.close()
+    else:
         progress.log("the node already matches the profile")
-        return RunResult(state, [], [])
-    iface = wait_for_node(params.port, progress, first_delay=REBOOT_GRACE_S)
-    try:
-        state = node_identity(iface)
-        remaining = compare(iface, profile)
-    finally:
-        iface.close()
+        remaining = []
+    if profile.app:
+        # The app last: it is told to connect to this port at start-up.
+        written += apply_app_settings(params.port, profile.app, progress)
+        remaining += compare_app_settings(params.port, profile.app)
     _report(remaining, progress)
     return RunResult(state, written, remaining)
 

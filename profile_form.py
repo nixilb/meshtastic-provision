@@ -107,6 +107,16 @@ FIELDS: tuple[tuple[str, tuple[Field, ...]], ...] = (
             Field("channels[0].settings.module_settings.position_precision", "Position precision", "int", "bits, 13 is about 1.5 km", maximum=32),
         ),
     ),
+    (
+        "meshtastic-desktop (the app on this computer)",
+        (
+            Field("app.auto_connect", "Connect to this node at start-up", "bool", "and reconnect after a disconnect"),
+            Field("app.mqtt_observer", "MQTT observer", "bool", "the app's own read-only broker connection"),
+            Field("app.mqtt_observer_all_regions", "Observe every region", "bool", "nodes of every topic root on the map"),
+            Field("app.map_world_nodes", "MQTT world on the map", "bool"),
+            Field("app.map_gateway_links", "Gateway links on the map", "bool"),
+        ),
+    ),
 )
 
 

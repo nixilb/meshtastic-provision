@@ -61,3 +61,17 @@ channels:
       downlink_enabled: true
       module_settings:
         position_precision: 13
+
+# meshtastic-desktop's own settings on this computer
+# (~/.config/meshtastic/settings.json), written after the node, with the
+# node's port as the address to connect to. The app must not be running.
+app:
+  # Connect to the node at start-up and reconnect after a disconnect.
+  auto_connect: true
+  # The app's read-only broker connection, which lists and maps the nodes
+  # of every topic root; independent of the node's MQTT settings above.
+  mqtt_observer: true
+  mqtt_observer_all_regions: true
+  # Map buttons: nodes seen through MQTT worldwide, links to their gateways.
+  map_world_nodes: true
+  map_gateway_links: true

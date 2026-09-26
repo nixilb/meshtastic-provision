@@ -28,9 +28,9 @@ config:
     # POSIX time zone of the node's clock (Europe/Paris).
     tzdef: "CET-1CEST,M3.5.0,M10.5.0/3"
   network:
-    # Wi-Fi credentials for a later use; the radio stays on Bluetooth and
-    # USB (on an ESP32, Wi-Fi and Bluetooth exclude each other).
-    wifi_enabled: false
+    # Wi-Fi on: the node joins this network (fill in its name and
+    # password). On an ESP32, Wi-Fi turns Bluetooth off; USB keeps working.
+    wifi_enabled: true
     wifi_ssid: "MyNetwork"
     wifi_psk: "change-me"
 

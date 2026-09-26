@@ -170,17 +170,10 @@ class Window(QMainWindow):
         form.addRow(buttons)
         column.addWidget(self.device_box)
 
-        # The run: its stages, a warning while the flash is written, the
-        # progress bar and the outcome. Hidden until an action runs.
+        # The run: its stages, the progress bar and the outcome. Hidden until an action runs.
         self.steps_row = QHBoxLayout()
         self.step_labels: dict[str, QLabel] = {}
         column.addLayout(self.steps_row)
-        self.banner = QLabel("Do not unplug the node: its firmware is being written.")
-        banner_font = self.banner.font()
-        banner_font.setBold(True)
-        self.banner.setFont(banner_font)
-        self.banner.setVisible(False)
-        column.addWidget(self.banner)
         self.bar = QProgressBar()
         self.bar.setRange(0, 1000)
         self.bar.setTextVisible(False)
@@ -342,25 +335,12 @@ class Window(QMainWindow):
             self._paint_step(earlier, "done")
         self._paint_step(name, "active")
         self.current_step = name
-        # Unplugging while the flash is erased or written leaves the board
-        # without firmware (a new flash recovers it).
-        self.banner.setVisible(name in (provision.STEP_ERASE, provision.STEP_WRITE))
-        self._paint_banner()
-
-    def _paint_banner(self) -> None:
-        palette = self.banner.palette()
-        palette.setColor(QPalette.ColorRole.Window, QColor("#b26a00"))
-        palette.setColor(QPalette.ColorRole.WindowText, QColor("#ffffff"))
-        self.banner.setPalette(palette)
-        self.banner.setAutoFillBackground(True)
-        self.banner.setContentsMargins(8, 6, 8, 6)
 
     def _run_failed(self, text: str) -> None:
         if not self.run_steps:
             return  # an error outside a run (detection): the log has it
         if self.current_step:
             self._paint_step(self.current_step, "failed")
-        self.banner.setVisible(False)
         self._set_result(text, "#e53935")
 
     def _run_succeeded(self, text: str) -> None:
@@ -368,7 +348,6 @@ class Window(QMainWindow):
             return
         for name in self.run_steps:
             self._paint_step(name, "done")
-        self.banner.setVisible(False)
         self._set_result(text, "#43a047")
 
     def _set_result(self, text: str, colour: str) -> None:
@@ -424,8 +403,7 @@ class Window(QMainWindow):
         for widget in (self.form, self.port, self.board, self.version, self.backup):
             widget.setEnabled(not busy)
         if not busy:
-            self.banner.setVisible(False)
-            self.run_steps = ()  # the strip stays shown; later errors are not the run's
+                self.run_steps = ()  # the strip stays shown; later errors are not the run's
         self._update_buttons()
 
     def _update_rows(self) -> None:

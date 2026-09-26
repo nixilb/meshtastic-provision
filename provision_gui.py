@@ -110,7 +110,12 @@ class Window(QMainWindow):
 
         # Nothing plugged in: a single line says what to do.
         self.plug_hint = QLabel("Plug a Meshtastic node, or a new board, in over USB.")
-        self.plug_hint.setStyleSheet("font-size: 12pt; padding: 12px 4px;")
+        # 2026-09-26: no style sheet here: a styled widget keeps the palette
+        # it was polished with, so the text stayed dark on the dark theme.
+        font = self.plug_hint.font()
+        font.setPointSizeF(font.pointSizeF() * 1.25)
+        self.plug_hint.setFont(font)
+        self.plug_hint.setContentsMargins(4, 12, 4, 12)
         column.addWidget(self.plug_hint)
 
         # One frame for the plugged node: what it is, what to install on it,

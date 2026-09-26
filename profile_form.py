@@ -21,6 +21,7 @@ from typing import Any
 import yaml
 from meshtastic.protobuf import channel_pb2, config_pb2
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -286,7 +287,9 @@ class ProfileForm(QWidget):
                 if field.help:
                     hint = QLabel(field.help)
                     hint.setWordWrap(True)
-                    hint.setStyleSheet("color: palette(mid);")
+                    # A palette role, not a style sheet, so the grey follows
+                    # the light/dark switch.
+                    hint.setForegroundRole(QPalette.ColorRole.PlaceholderText)
                     grid.addWidget(hint, r, 3)
                 self.rows[field.path] = _Row(field, present, widget)
             column.addWidget(box)

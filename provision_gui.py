@@ -121,9 +121,10 @@ class Window(QMainWindow):
         form.addRow("Chip", self.chip_label)
         self.board = QComboBox()
         self.board.setPlaceholderText("loading the board list...")
+        self.board.currentIndexChanged.connect(lambda _index: self._pick_version())
         form.addRow("Board", self.board)
         self.version = QComboBox()
-        self.version.setPlaceholderText("loading the versions...")
+        self.version.setPlaceholderText("set once a board is chosen")
         form.addRow("Version", self.version)
         self.backup = QCheckBox("Back up the node's current settings before erasing (needs a working node)")
         self.backup.setChecked(True)
@@ -236,12 +237,21 @@ class Window(QMainWindow):
     def _set_lists(self, payload: object) -> None:
         self.boards, versions = payload  # type: ignore[misc]
         self._fill_boards()
+        self.versions = versions
         self.version.clear()
-        self.version.setPlaceholderText("choose the firmware version to install")
+        self.version.setPlaceholderText("set once a board is chosen")
         for release in versions:
             self.version.addItem(str(release), release.version)
-        # No default: the version to install is an explicit choice.
-        self.version.setCurrentIndex(-1)
+        self._pick_version()
+
+    def _pick_version(self) -> None:
+        """No version without a board; once a board is chosen (detected or
+        by hand), the newest stable release, alphas left out."""
+        if self.board.currentIndex() < 0:
+            self.version.setCurrentIndex(-1)
+            return
+        stable = next((i for i, r in enumerate(getattr(self, "versions", [])) if not r.prerelease), -1)
+        self.version.setCurrentIndex(stable)
 
     def _set_node(self, identity: object) -> None:
         self.identity = identity  # type: ignore[assignment]

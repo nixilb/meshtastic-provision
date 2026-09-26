@@ -6,7 +6,7 @@
 # look for), fill in the secrets and keep that copy out of any repository.
 #
 # Only the fields written here are compared and written; every other
-# setting keeps its value on the node. Field names, sections and enum
+# setting keeps its value /modon the node. Field names, sections and enum
 # values are those of Meshtastic's protobufs (config.proto,
 # module_config.proto, channel.proto), in snake_case, as `meshtastic
 # --export-config` prints them. The `security` section and channel keys

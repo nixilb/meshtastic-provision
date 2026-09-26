@@ -118,8 +118,9 @@ class Window(QMainWindow):
         self.node_label = QLabel("waiting for a node")
         self.node_label.setWordWrap(True)
         form.addRow("Node", self.node_label)
+        # The chip is still read (it narrows the board list and guards the
+        # flash) but not shown: it means nothing to most users.
         self.chip_label = QLabel("not read yet")
-        form.addRow("Chip", self.chip_label)
         column.addWidget(device)
 
         # What to install: shown only once a node is plugged in.

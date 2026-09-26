@@ -81,6 +81,7 @@ class Window(QMainWindow):
         self._answer: dict[str, bool] = {}
         self._answered = threading.Event()
         self._build()
+        self._update_buttons()
         theme.install(self)
         self._connect()
         self._refresh_ports()
@@ -126,17 +127,17 @@ class Window(QMainWindow):
         form = QFormLayout(self.firmware_box)
         self.board = QComboBox()
         self.board.setPlaceholderText("loading the board list...")
-        self.board.currentIndexChanged.connect(lambda _index: self._pick_version())
+        self.board.currentIndexChanged.connect(lambda _index: (self._pick_version(), self._update_buttons()))
         form.addRow("Board", self.board)
         self.version = QComboBox()
         self.version.setPlaceholderText("set once a board is chosen")
+        self.version.currentIndexChanged.connect(lambda _index: self._update_buttons())
         form.addRow("Version", self.version)
         self.backup = QCheckBox("Back up the node's current settings before erasing (needs a working node)")
         self.backup.setChecked(True)
         form.addRow("", self.backup)
-        self.firmware_box.setVisible(False)
-        column.addWidget(self.firmware_box)
 
+        # The actions, each shown only when it can run (see _update_buttons).
         buttons = QHBoxLayout()
         self.flash_button = QPushButton("Flash")
         self.flash_button.clicked.connect(self._flash)
@@ -147,7 +148,9 @@ class Window(QMainWindow):
         for button in (self.flash_button, self.configure_button, self.check_button):
             buttons.addWidget(button)
         buttons.addStretch(1)
-        column.addLayout(buttons)
+        form.addRow(buttons)
+        self.firmware_box.setVisible(False)
+        column.addWidget(self.firmware_box)
 
         self.bar = QProgressBar()
         self.bar.setRange(0, 1000)
@@ -237,8 +240,18 @@ class Window(QMainWindow):
         self.bar_label.setText(label if total > 0 else "")
 
     def _set_busy(self, busy: bool) -> None:
-        for button in (self.flash_button, self.configure_button, self.check_button):
-            button.setEnabled(not busy)
+        self.busy = busy
+        self._update_buttons()
+
+    def _update_buttons(self) -> None:
+        """Show each action only when it can run: none while a step runs;
+        Flash once a board and a version are chosen; Configure only and
+        Check once a Meshtastic node has answered."""
+        idle = not getattr(self, "busy", False)
+        self.flash_button.setVisible(idle and self.board.currentIndex() >= 0 and self.version.currentIndex() >= 0)
+        answered = idle and self.identity is not None
+        self.configure_button.setVisible(answered)
+        self.check_button.setVisible(answered)
 
     def _set_lists(self, payload: object) -> None:
         self.boards, versions = payload  # type: ignore[misc]
@@ -263,6 +276,7 @@ class Window(QMainWindow):
         self.identity = identity  # type: ignore[assignment]
         self.node_label.setText(str(identity) if identity else "nothing answers (blank board?)")
         self._fill_boards()
+        self._update_buttons()
 
     def _set_chip(self, info: object) -> None:
         self.chip = info  # type: ignore[assignment]

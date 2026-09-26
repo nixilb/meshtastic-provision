@@ -62,10 +62,36 @@ def current_scheme() -> str:
     return saved if saved in (LIGHT, DARK) else system_scheme()
 
 
+# The progress bar of meshtastic-desktop (iced's progress_bar, girth 6):
+# a thin rounded bar in the Meshtastic green on a discreet track. Colours
+# are the app's own (`src/theme.rs`: `primary` on `border`), per scheme.
+_PROGRESS = {
+    DARK: ("#67ea94", "#2c3934"),
+    LIGHT: ("#208a4c", "#ced9d4"),
+}
+_PROGRESS_STYLE = """
+QProgressBar {{
+    max-height: 6px;
+    min-height: 6px;
+    border: none;
+    border-radius: 3px;
+    background: {track};
+}}
+QProgressBar::chunk {{
+    border-radius: 3px;
+    background: {bar};
+}}
+"""
+
+
 def apply_scheme(scheme: str) -> None:
     app = QApplication.instance()
     app.setStyle("Fusion")
     app.setPalette(_dark_palette() if scheme == DARK else _light_palette())
+    # An application style sheet (not one on the widget) so switching the
+    # scheme restyles the bar; it only matches progress bars.
+    bar, track = _PROGRESS[scheme]
+    app.setStyleSheet(_PROGRESS_STYLE.format(bar=bar, track=track))
 
 
 def install(window) -> None:

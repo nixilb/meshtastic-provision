@@ -56,6 +56,89 @@ class Field:
     maximum: int = 1_000_000_000  # for `int`
 
 
+# The long explanation of each setting, shown as the tooltip of its row
+# (label, value and checkbox). Written for someone who has never used
+# Meshtastic.
+TIPS: dict[str, str] = {
+    "owner": "The node's name as other people see it in their Meshtastic apps and on the maps. "
+    "Choose something that identifies you or the place, e.g. 'Anna - Rue des Lilas'.",
+    "owner_short": "A short tag of up to 4 characters, shown where there is little room: map "
+    "markers, the node's small screen, message bubbles. Letters, digits or an emoji.",
+    "config.device.tzdef": "The node's time zone, so the times on its screen and in its logs are "
+    "local. The default is France and most of Western Europe, summer time included. Only change "
+    "it if the node is elsewhere.",
+    "config.lora.region": "The radio band the node may legally transmit on. It depends on the "
+    "country: EU_868 for France and the European Union, US for North America, and so on. A node "
+    "with no region set stays silent. A wrong region breaks the law and reaches no one.",
+    "config.lora.ignore_mqtt": "When ticked on, the node throws away every message that came from "
+    "the Internet (MQTT). Keep it OFF: meshtastic-desktop brings the Internet's messages to the "
+    "node, and with this on they are silently dropped.",
+    "config.lora.config_ok_to_mqtt": "Lets other people's Internet gateways pass your node's "
+    "messages on to the Internet. Keep it on so your messages travel further than your radio "
+    "reaches.",
+    "config.network.wifi_enabled": "Connects the node to a Wi-Fi network by itself, so it can reach "
+    "the Internet without this computer. On most boards Wi-Fi turns Bluetooth off: the phone app "
+    "can then no longer connect to the node over Bluetooth. USB keeps working.",
+    "config.network.wifi_ssid": "The name of the Wi-Fi network the node joins, exactly as your "
+    "phone shows it (upper and lower case matter). Only 2.4 GHz networks work.",
+    "config.network.wifi_psk": "The password of that Wi-Fi network, at least 8 characters. It is "
+    "stored on the node and in a file only you can read on this computer.",
+    "module_config.mqtt.enabled": "MQTT is how Meshtastic nodes talk over the Internet, through a "
+    "server called a broker. With it on, your node exchanges messages with nodes far beyond "
+    "radio range.",
+    "module_config.mqtt.address": "The broker's address. mqtt.meshtastic.org is the public broker "
+    "run by the Meshtastic project; keep it unless your group runs its own.",
+    "module_config.mqtt.username": "The broker's user name. 'meshdev' is the public broker's, "
+    "shared by everyone.",
+    "module_config.mqtt.password": "The broker's password. 'large4cats' is the public broker's, "
+    "shared by everyone; it is not a secret.",
+    "module_config.mqtt.encryption_enabled": "Sends messages to the Internet still encrypted with "
+    "the channel's key, as they are over the radio. Keep it on: without it anyone reading the "
+    "broker could read your messages.",
+    "module_config.mqtt.root": "The broker's topic your node publishes to and listens on; it "
+    "groups the nodes of one region. msh/EU_868 is Europe's. It must match the region above.",
+    "module_config.mqtt.proxy_to_client_enabled": "Lets meshtastic-desktop, on this computer, carry "
+    "the node's Internet traffic when the node has no Wi-Fi of its own. Keep it on: this is what "
+    "links your node to the Internet through the app.",
+    "module_config.mqtt.map_reporting_enabled": "Publishes your node on the public Meshtastic maps "
+    "(name, board and position at the precision below), in clear, readable by anyone. Off by "
+    "default for privacy.",
+    "module_config.mqtt.map_report_settings.publish_interval_secs": "How often the node sends its "
+    "map report, in seconds. 3600 is once an hour.",
+    "module_config.mqtt.map_report_settings.position_precision": "How precisely the map report "
+    "gives your position, in bits: 32 is exact, 16 about 700 m, 13 about 1.5 km, 11 about 6 km. "
+    "Lower is more private.",
+    "channels[0].role": "The main channel, the one everybody in the region shares (LongFast). "
+    "Leave it PRIMARY.",
+    "channels[0].settings.uplink_enabled": "Sends the messages of this channel to the Internet "
+    "(MQTT) too, so nodes elsewhere receive them. Needed to talk beyond radio range.",
+    "channels[0].settings.downlink_enabled": "Lets the messages of this channel coming from the "
+    "Internet (MQTT) reach your node. Needed to receive from beyond radio range.",
+    "channels[0].settings.module_settings.position_precision": "How precisely your node shares its "
+    "position on this channel, in bits: 32 is exact, 16 about 700 m, 13 about 1.5 km, 0 shares "
+    "nothing. Everyone on the channel can see it.",
+    "app.auto_connect": "meshtastic-desktop connects to this node by itself when it starts, and "
+    "reconnects after the cable is unplugged and plugged back.",
+    "app.mqtt_observer": "meshtastic-desktop listens to the Internet broker on its own, read only, "
+    "to show the nodes it hears about in the node list and on the map, even far away.",
+    "app.mqtt_observer_all_regions": "Listens to every region of the world instead of yours only. "
+    "Shows many more nodes on the map; uses more of the Internet connection.",
+    "app.map_world_nodes": "Shows on meshtastic-desktop's map the nodes heard through the Internet, "
+    "not only those your radio heard.",
+    "app.map_gateway_links": "Draws on the map a line between each node and the Internet gateway "
+    "that relayed it, to see how messages travel.",
+}
+
+
+def _tooltip(field: Field) -> str:
+    """Rich text, so Qt wraps it; the checkbox's meaning comes last."""
+    body = TIPS.get(field.path, field.help)
+    return (
+        f"<p style='max-width: 380px'><b>{field.label}</b></p><p>{body}</p>"
+        "<p><i>Ticked: written to the node. Unticked: the node keeps its own value.</i></p>"
+    )
+
+
 def _enum_names(descriptor: Any) -> tuple[str, ...]:
     return tuple(v.name for v in descriptor.values)
 
@@ -277,9 +360,11 @@ class ProfileForm(QWidget):
             grid.setColumnStretch(3, 2)
             for r, field in enumerate(fields):
                 present = QCheckBox()
-                present.setToolTip("Write this setting to the node")
                 label = QLabel(field.label)
                 widget = self._widget(field)
+                tip = _tooltip(field)
+                for part in (present, label, widget):
+                    part.setToolTip(tip)
                 present.toggled.connect(widget.setEnabled)
                 grid.addWidget(present, r, 0)
                 grid.addWidget(label, r, 1)

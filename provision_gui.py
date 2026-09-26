@@ -44,14 +44,6 @@ import theme
 from profile_form import ProfileForm
 from provision import FlashParams, Progress, ProvisionError, RunParams
 
-INTRO = (
-    "Prepare a Meshtastic node plugged in over USB. "
-    "A node plugged in is detected by itself: it says which board it is (a blank board cannot: choose it "
-    "by hand) and its chip is read. 'Flash & configure' erases the whole flash, installs the chosen firmware, then applies the settings on "
-    "the right; the node restarts with a new private key, which other nodes will have to learn again. "
-    "Configure only applies the settings to the node as it is; Check just reports the ones that differ."
-)
-
 BACKUP_DIR = provision.DEFAULT_PROFILE.parent / "backups"
 
 
@@ -123,9 +115,6 @@ class Window(QMainWindow):
         left = QWidget()
         column = QVBoxLayout(left)
         column.setContentsMargins(12, 12, 8, 12)
-        intro = QLabel(INTRO)
-        intro.setWordWrap(True)
-        column.addWidget(intro)
 
         # Nothing plugged in: a single line says what to do.
         self.plug_hint = QLabel("Plug a Meshtastic node, or a new board, in over USB.")

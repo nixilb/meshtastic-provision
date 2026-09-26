@@ -72,7 +72,7 @@ class Window(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Meshtastic node provisioning")
-        self.resize(1240, 760)
+        self.resize(1400, 800)
         self.events = Events()
         self.worker: threading.Thread | None = None
         self.boards: list[provision.Board] = []
@@ -165,8 +165,9 @@ class Window(QMainWindow):
             raise SystemExit(1) from err
         right_layout.addWidget(self.form)
         splitter.addWidget(right)
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 2)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([640, 760])
 
     def _connect(self) -> None:
         self.events.log.connect(lambda text: self._append(text))

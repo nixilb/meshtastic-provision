@@ -20,6 +20,7 @@ from typing import Any
 
 import yaml
 from meshtastic.protobuf import channel_pb2, config_pb2
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -261,6 +262,9 @@ class ProfileForm(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        # The form fits the pane's width: the help texts wrap instead.
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll = scroll
         outer.addWidget(scroll, 1)
         inner = QWidget()
         scroll.setWidget(inner)
@@ -268,7 +272,8 @@ class ProfileForm(QWidget):
         for group, fields in FIELDS:
             box = QGroupBox(group)
             grid = QGridLayout(box)
-            grid.setColumnStretch(2, 1)
+            grid.setColumnStretch(2, 3)
+            grid.setColumnStretch(3, 2)
             for r, field in enumerate(fields):
                 present = QCheckBox()
                 present.setToolTip("Write this setting to the node")
@@ -280,6 +285,7 @@ class ProfileForm(QWidget):
                 grid.addWidget(widget, r, 2)
                 if field.help:
                     hint = QLabel(field.help)
+                    hint.setWordWrap(True)
                     hint.setStyleSheet("color: palette(mid);")
                     grid.addWidget(hint, r, 3)
                 self.rows[field.path] = _Row(field, present, widget)
@@ -301,6 +307,7 @@ class ProfileForm(QWidget):
             return _SecretEdit()
         edit = QLineEdit()
         edit.setClearButtonEnabled(True)
+        edit.setMinimumWidth(120)
         return edit
 
     def collect(self) -> dict[str, Any]:

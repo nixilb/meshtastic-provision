@@ -46,7 +46,7 @@ from provision import FlashParams, Progress, ProvisionError, RunParams
 INTRO = (
     "Prepare a Meshtastic node plugged in over USB. Close meshtastic-desktop first: it holds the port. "
     "A node plugged in is detected by itself: it says which board it is (a blank board cannot: choose it "
-    "by hand) and its chip is read. Flash erases the whole flash, installs the chosen firmware, then applies the settings on "
+    "by hand) and its chip is read. 'Flash & configure' erases the whole flash, installs the chosen firmware, then applies the settings on "
     "the right; the node restarts with a new private key, which other nodes will have to learn again. "
     "Configure only applies the settings to the node as it is; Check just reports the ones that differ."
 )
@@ -147,7 +147,7 @@ class Window(QMainWindow):
 
         # The actions, each shown only when it can run (see _update_buttons).
         buttons = QHBoxLayout()
-        self.flash_button = QPushButton("Flash")
+        self.flash_button = QPushButton("Flash && configure")  # "&&" shows one "&" (a single one marks a shortcut)
         self.flash_button.clicked.connect(self._flash)
         self.configure_button = QPushButton("Configure only")
         self.configure_button.clicked.connect(lambda: self._configure(check=False))

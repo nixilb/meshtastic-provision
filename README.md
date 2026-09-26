@@ -52,7 +52,7 @@ answers nothing: choose it by hand. With several nodes plugged in, picking
 a port in the list detects that one. Choose the firmware version, fill the
 settings, then:
 
-- Flash: after a confirmation, erases the flash, installs the firmware, waits
+- Flash & configure: after a confirmation, erases the flash, installs the firmware, waits
   for the node to boot, applies the settings and verifies them. With the
   backup box ticked, the node's current settings are first exported to
   `~/.config/meshtastic/backups/node-<date>.yaml` (this needs a working

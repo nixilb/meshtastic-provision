@@ -38,20 +38,28 @@ refuse to start while another process does.
 uv run provision_gui.py
 ```
 
-Pick the port (Refresh after plugging the node) and press Detect: it asks
-the node which board it is (a running firmware reports its build target,
-e.g. `heltec-v3`, and its MAC address), then reads the chip (family, MAC,
-flash size). The board list is reduced to the chip's family and the node's
-board is preselected. A blank board answers nothing: choose it by hand.
-Choose the firmware version and the profile, then:
+Left, the node and the actions; right, the settings form. Pick the port
+(Refresh after plugging the node) and press Detect: it asks the node which
+board it is (a running firmware reports its build target, e.g.
+`heltec-v3`, and its MAC address), then reads the chip (family, MAC, flash
+size). The board list is reduced to the chip's family and the node's board
+is preselected. A blank board answers nothing: choose it by hand. Choose
+the firmware version, fill the settings, then:
 
 - Flash: after a confirmation, erases the flash, installs the firmware, waits
-  for the node to boot, applies the profile and verifies it. With the
+  for the node to boot, applies the settings and verifies them. With the
   backup box ticked, the node's current settings are first exported to
   `~/.config/meshtastic/backups/node-<date>.yaml` (this needs a working
   node; untick it for a blank or bricked board).
-- Configure only: applies the profile to the node as it is.
+- Configure only: applies the settings to the node as it is.
 - Check: reports the settings that differ, writes nothing.
+
+The settings form lists every setting of the example profile: a checkbox
+says whether it is applied (unticked, the node keeps its own value), enum
+values come as a choice list, passwords are masked. The form is validated
+and saved to `~/.config/meshtastic/node-profile.yaml` before each action
+and when the window closes; that file is the command line's default
+profile, so both tools share the same settings.
 
 The log pane shows every step; errors are in red.
 
@@ -106,17 +114,13 @@ drive) are not, yet.
 
 ## Profile
 
-A YAML file; `node-profile.example.yaml` is documented field by field and
-matches the node meshtastic-desktop is developed with. The window's Edit
-button (next to the profile field) opens a form on the profile: every
-setting of the example with a checkbox saying whether the profile sets it,
-a choice list for enum values, masked fields for the passwords. Save
-validates the result as a run would and writes the file, readable by its
-owner only. A new profile starts from the example without its Wi-Fi
-placeholders. By hand: copy the example to
-`~/.config/meshtastic/node-profile.yaml`, fill in the Wi-Fi and broker
-secrets, and keep that copy out of any repository (`.gitignore` already
-excludes `node-profile.yaml` here).
+The settings, as a YAML file: what the window's form saves, and what the
+command line takes with `--profile`. `node-profile.example.yaml` is
+documented field by field and matches the node meshtastic-desktop is
+developed with; a new form starts from it without its Wi-Fi placeholders.
+By hand: copy the example to `~/.config/meshtastic/node-profile.yaml`,
+fill in the Wi-Fi and broker secrets, and keep that copy out of any
+repository (`.gitignore` already excludes `node-profile.yaml` here).
 
 ```yaml
 owner: nixilb_01          # long name
@@ -165,9 +169,9 @@ of remaining differences.
 | `provision.py` | The steps: ports, downloads, chip, flash, profile, compare, apply |
 | `provision_cli.py` | Command line |
 | `provision_gui.py` | Tkinter window |
-| `profile_editor.py` | The profile form opened by the window's Edit button |
+| `profile_form.py` | The settings form of the window |
 | `node-profile.example.yaml` | Documented example profile |
-| `~/.config/meshtastic/node-profile.yaml` | Default profile (not tracked) |
+| `~/.config/meshtastic/node-profile.yaml` | The settings: saved by the window, default profile of the command line |
 | `~/.config/meshtastic/backups/` | Settings exported before a flash (window) |
 | `~/.cache/meshtastic-provision/` | Downloaded firmware images |
 | `.venv/` | uv's environment (not tracked) |

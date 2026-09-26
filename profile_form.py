@@ -1,11 +1,12 @@
-"""Form to fill a profile without editing YAML by hand: a Tkinter dialog
-listing every setting of the example profile with a widget of the right
-kind (text, masked text, checkbox, number, choice among the protobuf enum
-values), reading the existing file and writing it back validated.
+"""The settings form of the window: every setting of the example profile
+with a widget of the right kind (text, masked text, checkbox, number,
+choice among the protobuf enum values) and a checkbox saying whether the
+profile sets it.
 
-Settings the file holds beyond the form (a field added by hand) are kept
-untouched; the form only sets its own paths. The dialog is opened from the
-main window (`provision_gui.py`).
+The form is the user's view of the profile; the YAML file behind it
+(`provision.DEFAULT_PROFILE`) is read when the window opens and written,
+validated, before each action and when the window closes. Settings the
+file holds beyond the form (a field added by hand) are kept untouched.
 """
 
 from __future__ import annotations
@@ -15,8 +16,8 @@ import tempfile
 import tkinter as tk
 from dataclasses import dataclass
 from pathlib import Path
-from tkinter import messagebox, ttk
-from typing import Any, Callable
+from tkinter import ttk
+from typing import Any
 
 import yaml
 from meshtastic.protobuf import channel_pb2, config_pb2
@@ -167,53 +168,64 @@ def _unset(data: dict[str, Any], path: str) -> None:
         del container[key]
 
 
-class ProfileEditor(tk.Toplevel):
-    """The dialog. `on_saved(path)` is called after a successful write."""
+class ProfileForm(ttk.Frame):
+    """The form, embedded in the window. `load` fills it from the file (or
+    the example for a new one), `save` validates and writes it."""
 
-    def __init__(self, parent: tk.Misc, path: Path, on_saved: Callable[[Path], None]) -> None:
+    def __init__(self, parent: tk.Misc, path: Path) -> None:
         super().__init__(parent)
-        self.title(f"Profile: {path}")
         self.path = path
-        self.on_saved = on_saved
-        self.data = self._load()
+        self.data: dict[str, Any] = {}
         self.vars: dict[str, tk.Variable] = {}
         self.present: dict[str, tk.BooleanVar] = {}
         self._build()
-        self.transient(parent)
-        self.grab_set()
+        self.load()
 
-    def _load(self) -> dict[str, Any]:
+    def load(self) -> None:
         source = self.path if self.path.is_file() else EXAMPLE_PROFILE
         try:
             with open(source, encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
         except (OSError, yaml.YAMLError) as err:
-            messagebox.showerror("Profile", f"cannot read {source}: {err}", parent=self)
-            data = {}
+            raise ProvisionError(f"cannot read the saved settings ({source}): {err}") from err
+        if not isinstance(data, dict):
+            raise ProvisionError(f"the saved settings ({source}) are not a mapping")
         if not self.path.is_file():
-            # A new file starts from the example, minus its placeholders.
+            # New settings start from the example, minus its placeholders.
             for path in ("config.network.wifi_ssid", "config.network.wifi_psk"):
                 _unset(data, path)
-        return data if isinstance(data, dict) else {}
+        self.data = data
+        for _group, fields in FIELDS:
+            for field in fields:
+                current = _get(data, field.path)
+                self.present[field.path].set(current is not None)
+                if field.kind == "bool":
+                    self.vars[field.path].set(bool(current))
+                elif field.kind == "enum":
+                    self.vars[field.path].set(str(current) if current is not None else field.choices[0])
+                else:
+                    self.vars[field.path].set("" if current is None else str(current))
 
     def _build(self) -> None:
-        note = ttk.Label(
+        ttk.Label(
             self,
-            text="Tick a setting to write it to the profile; an unticked one is left as it is on the node.",
-            wraplength=640,
-        )
-        note.grid(row=0, column=0, columnspan=4, sticky="w", padx=8, pady=8)
-        canvas = tk.Canvas(self, highlightthickness=0, width=680, height=520)
+            text="Settings applied to the node. Ticked ones are written; an unticked one keeps its value on the node.",
+            wraplength=560,
+        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=8, pady=(0, 4))
+        canvas = tk.Canvas(self, highlightthickness=0, width=600)
         scrollbar = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
         inner = ttk.Frame(canvas)
         inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.create_window((0, 0), window=inner, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
-        canvas.grid(row=1, column=0, columnspan=3, sticky="nsew")
-        scrollbar.grid(row=1, column=3, sticky="ns")
+        canvas.grid(row=1, column=0, sticky="nsew")
+        scrollbar.grid(row=1, column=1, sticky="ns")
         self.rowconfigure(1, weight=1)
         self.columnconfigure(0, weight=1)
         inner.columnconfigure(2, weight=1)
+        # Wheel scrolling over the form (X11 sends buttons 4 and 5).
+        canvas.bind_all("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))
+        canvas.bind_all("<Button-5>", lambda e: canvas.yview_scroll(1, "units"))
 
         row = 0
         for group, fields in FIELDS:
@@ -222,36 +234,30 @@ class ProfileEditor(tk.Toplevel):
             )
             row += 1
             for field in fields:
-                current = _get(self.data, field.path)
-                present = tk.BooleanVar(value=current is not None)
+                present = tk.BooleanVar(value=False)
                 self.present[field.path] = present
                 ttk.Checkbutton(inner, variable=present).grid(row=row, column=0, sticky="w", padx=(8, 0))
                 ttk.Label(inner, text=field.label).grid(row=row, column=1, sticky="w", padx=4)
-                widget = self._widget(inner, field, current)
-                widget.grid(row=row, column=2, sticky="ew", padx=4, pady=2)
+                self._widget(inner, field).grid(row=row, column=2, sticky="ew", padx=4, pady=2)
                 if field.help:
                     ttk.Label(inner, text=field.help, foreground="#666").grid(row=row, column=3, sticky="w", padx=(4, 8))
                 row += 1
 
-        buttons = ttk.Frame(self)
-        buttons.grid(row=2, column=0, columnspan=4, sticky="e", padx=8, pady=8)
-        ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="right", padx=(8, 0))
-        ttk.Button(buttons, text="Save", command=self._save).pack(side="right")
-
-    def _widget(self, parent: tk.Misc, field: Field, current: Any) -> tk.Widget:
+    def _widget(self, parent: tk.Misc, field: Field) -> tk.Widget:
         if field.kind == "bool":
-            var = tk.BooleanVar(value=bool(current))
+            var = tk.BooleanVar()
             self.vars[field.path] = var
             return ttk.Checkbutton(parent, variable=var)
         if field.kind == "enum":
-            var = tk.StringVar(value=str(current) if current is not None else field.choices[0])
+            var = tk.StringVar()
             self.vars[field.path] = var
-            return ttk.Combobox(parent, textvariable=var, values=field.choices, state="readonly")
-        var = tk.StringVar(value="" if current is None else str(current))
+            return ttk.Combobox(parent, textvariable=var, values=field.choices, state="readonly", width=14)
+        var = tk.StringVar()
         self.vars[field.path] = var
-        return ttk.Entry(parent, textvariable=var, show="*" if field.kind == "secret" else "")
+        return ttk.Entry(parent, textvariable=var, show="*" if field.kind == "secret" else "", width=24)
 
-    def _collect(self) -> dict[str, Any]:
+    def collect(self) -> dict[str, Any]:
+        """The profile as the form shows it; raises on an invalid entry."""
         data = copy.deepcopy(self.data)  # keeps the file's key order
         for _group, fields in FIELDS:
             for field in fields:
@@ -273,27 +279,26 @@ class ProfileEditor(tk.Toplevel):
                 _set(data, field.path, value)
         return data
 
-    def _save(self) -> None:
+    def save(self) -> Path:
+        """Validate the form exactly as a run would, then write it. Returns
+        the file the actions read."""
+        data = self.collect()
+        text = "# Settings written by meshtastic-provision's window. Field names are\n"
+        text += "# those of Meshtastic's protobufs; see node-profile.example.yaml.\n"
+        text += yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
+        with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False, encoding="utf-8") as tmp:
+            tmp.write(text)
         try:
-            data = self._collect()
-            text = "# Profile written by meshtastic-provision's editor. Field names are\n"
-            text += "# those of Meshtastic's protobufs; see node-profile.example.yaml.\n"
-            text += yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
-            # Validate exactly as a run would, before touching the file.
-            with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False, encoding="utf-8") as tmp:
-                tmp.write(text)
-            try:
-                provision.load_profile(Path(tmp.name))
-            finally:
-                Path(tmp.name).unlink()
+            provision.load_profile(Path(tmp.name))
+        except ProvisionError as err:
+            raise ProvisionError(str(err).replace(f"profile {tmp.name}: ", "")) from None
+        finally:
+            Path(tmp.name).unlink()
+        try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             self.path.write_text(text, encoding="utf-8")
             self.path.chmod(0o600)  # it holds the Wi-Fi and broker passwords
-        except ProvisionError as err:
-            messagebox.showerror("Profile", str(err).replace(f"profile {self.path}: ", ""), parent=self)
-            return
         except OSError as err:
-            messagebox.showerror("Profile", f"cannot write {self.path}: {err}", parent=self)
-            return
-        self.on_saved(self.path)
-        self.destroy()
+            raise ProvisionError(f"cannot save the settings: {err}") from err
+        self.data = data
+        return self.path

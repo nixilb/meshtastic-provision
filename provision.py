@@ -950,8 +950,6 @@ def run(params: RunParams, progress: Progress) -> RunResult:
     """Perform the requested steps; see the module documentation."""
     _quiet_libraries()
     profile = load_profile(params.profile) if params.profile else Profile()
-    if params.profile:
-        progress.log(f"profile: {params.profile}")
     ensure_port_free(params.port)
 
     if params.flash:

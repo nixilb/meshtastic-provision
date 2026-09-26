@@ -25,7 +25,9 @@ INTRO = (
     "The node restarts with default settings and a new private key: other nodes will have "
     "to learn its key again.\n"
     "Configure only applies the profile to the node as it is; Check just reports the "
-    "settings that differ. Close meshtastic-desktop first: it holds the port."
+    "settings that differ. Detect asks the node which board it is (a blank board cannot "
+    "answer: choose it by hand) and reads the chip. Close meshtastic-desktop first: it "
+    "holds the port."
 )
 
 BACKUP_DIR = provision.DEFAULT_PROFILE.parent / "backups"
@@ -40,6 +42,7 @@ class App:
         self.worker: threading.Thread | None = None
         self.boards: list[provision.Board] = []
         self.chip: provision.ChipInfo | None = None
+        self.identity: provision.NodeIdentity | None = None
         self._build()
         self.root.after(100, self._poll)
         self._refresh_ports()
@@ -63,33 +66,35 @@ class App:
         self.detect_button = ttk.Button(frame, text="Detect", command=self._detect)
         self.detect_button.grid(row=1, column=3, **pad)
 
+        self.node_label = ttk.Label(frame, text="Node: not asked yet (press Detect)")
+        self.node_label.grid(row=2, column=1, columnspan=3, sticky="w", **pad)
         self.chip_label = ttk.Label(frame, text="Chip: not read yet")
-        self.chip_label.grid(row=2, column=1, columnspan=3, sticky="w", **pad)
+        self.chip_label.grid(row=3, column=1, columnspan=3, sticky="w", **pad)
 
-        ttk.Label(frame, text="Board").grid(row=3, column=0, sticky="w", **pad)
+        ttk.Label(frame, text="Board").grid(row=4, column=0, sticky="w", **pad)
         self.board = ttk.Combobox(frame, state="readonly", values=["loading..."])
-        self.board.grid(row=3, column=1, columnspan=3, sticky="ew", **pad)
+        self.board.grid(row=4, column=1, columnspan=3, sticky="ew", **pad)
 
-        ttk.Label(frame, text="Version").grid(row=4, column=0, sticky="w", **pad)
+        ttk.Label(frame, text="Version").grid(row=5, column=0, sticky="w", **pad)
         self.version = ttk.Combobox(frame, state="readonly", values=["loading..."])
-        self.version.grid(row=4, column=1, columnspan=3, sticky="ew", **pad)
+        self.version.grid(row=5, column=1, columnspan=3, sticky="ew", **pad)
 
-        ttk.Label(frame, text="Profile").grid(row=5, column=0, sticky="w", **pad)
+        ttk.Label(frame, text="Profile").grid(row=6, column=0, sticky="w", **pad)
         self.profile = ttk.Entry(frame)
-        self.profile.grid(row=5, column=1, columnspan=2, sticky="ew", **pad)
+        self.profile.grid(row=6, column=1, columnspan=2, sticky="ew", **pad)
         if provision.DEFAULT_PROFILE.is_file():
             self.profile.insert(0, str(provision.DEFAULT_PROFILE))
-        ttk.Button(frame, text="Browse", command=self._browse_profile).grid(row=5, column=3, **pad)
+        ttk.Button(frame, text="Browse", command=self._browse_profile).grid(row=6, column=3, **pad)
 
         self.backup = tk.BooleanVar(value=True)
         ttk.Checkbutton(
             frame,
             text=f"Back up the node's settings to {BACKUP_DIR} before erasing (needs a working node)",
             variable=self.backup,
-        ).grid(row=6, column=0, columnspan=4, sticky="w", **pad)
+        ).grid(row=7, column=0, columnspan=4, sticky="w", **pad)
 
         buttons = ttk.Frame(frame)
-        buttons.grid(row=7, column=0, columnspan=4, sticky="w", **pad)
+        buttons.grid(row=8, column=0, columnspan=4, sticky="w", **pad)
         self.flash_button = ttk.Button(buttons, text="Flash", command=self._flash)
         self.flash_button.pack(side="left", padx=(0, 8))
         self.configure_button = ttk.Button(buttons, text="Configure only", command=lambda: self._configure(check=False))
@@ -98,15 +103,15 @@ class App:
         self.check_button.pack(side="left")
 
         self.bar = ttk.Progressbar(frame, mode="determinate", maximum=1000)
-        self.bar.grid(row=8, column=0, columnspan=4, sticky="ew", **pad)
+        self.bar.grid(row=9, column=0, columnspan=4, sticky="ew", **pad)
         self.bar_label = ttk.Label(frame, text="")
-        self.bar_label.grid(row=9, column=0, columnspan=4, sticky="w", **pad)
+        self.bar_label.grid(row=10, column=0, columnspan=4, sticky="w", **pad)
 
         self.log = scrolledtext.ScrolledText(frame, height=14, state="disabled", wrap="word")
-        self.log.grid(row=10, column=0, columnspan=4, sticky="nsew", **pad)
+        self.log.grid(row=11, column=0, columnspan=4, sticky="nsew", **pad)
         self.log.tag_configure("error", foreground="#b00020")
         self.log.tag_configure("ok", foreground="#1b7f2a")
-        frame.rowconfigure(10, weight=1)
+        frame.rowconfigure(11, weight=1)
 
     # -- background work --------------------------------------------------
 
@@ -163,6 +168,10 @@ class App:
                     self.version["values"] = [str(v) for v in versions]
                     if versions:
                         self.version.current(0)
+                elif kind == "node":
+                    self.identity = payload  # type: ignore[assignment]
+                    self.node_label["text"] = f"Node: {payload}" if payload else "Node: nothing answers (blank board?)"
+                    self._fill_boards()
                 elif kind == "chip":
                     self.chip = payload  # type: ignore[assignment]
                     self.chip_label["text"] = f"Chip: {payload}"
@@ -204,19 +213,26 @@ class App:
         self.events.put(("lists", (boards, versions)))
 
     def _fill_boards(self) -> None:
+        """The board list, reduced to the detected chip's family, with the
+        board the node reported preselected."""
         boards = self.boards
         if self.chip:
             boards = [b for b in boards if b.mcu == self.chip.chip]
         self.board["values"] = [str(b) for b in boards]
-        if boards:
-            self.board.current(0)
-        else:
+        wanted = self.identity.pio_env if self.identity else ""
+        index = next((i for i, b in enumerate(boards) if b.platformio_target == wanted), 0 if boards else None)
+        if index is None:
             self.board.set("")
+        else:
+            self.board.current(index)
 
     def _detect(self) -> None:
         def work() -> None:
             port = self._selected_port()
-            info = provision.detect_chip(port, self._progress())
+            progress = self._progress()
+            identity = provision.probe_node(port, progress)
+            self.events.put(("node", identity))
+            info = provision.detect_chip(port, progress)
             self.events.put(("chip", info))
 
         self._start(work)
@@ -255,9 +271,10 @@ class App:
         def work() -> None:
             port = self._selected_port()
             board_text = self.board.get()
-            if not board_text or board_text == "loading...":
-                raise ProvisionError("choose a board (press Detect to read the chip first)")
-            board = board_text.rsplit("(", 1)[-1].rstrip(")") if "(" in board_text else board_text
+            board: str | None = None
+            if board_text and board_text != "loading...":
+                board = board_text.rsplit("(", 1)[-1].rstrip(")") if "(" in board_text else board_text
+            # No board chosen: the running node must say which it is.
             version = self.version.get().split(" ", 1)[0]
             if not version or version == "loading...":
                 raise ProvisionError("choose a firmware version")
@@ -267,7 +284,7 @@ class App:
             params = RunParams(
                 port=port,
                 profile=self._profile_path(required=False),
-                flash=FlashParams(board=board, version=version, backup=backup),
+                flash=FlashParams(version=version, board=board, backup=backup),
                 confirm=self._confirm,
             )
             result = provision.run(params, self._progress())

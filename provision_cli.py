@@ -25,7 +25,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--list-ports", action="store_true", help="list the USB serial ports and exit")
     parser.add_argument("--list-boards", action="store_true", help="list the ESP32 boards that can be installed and exit")
     parser.add_argument("--list-versions", action="store_true", help="list the published firmware versions and exit")
-    parser.add_argument("--detect", action="store_true", help="read the chip on the port (family, MAC, flash size) and exit")
+    parser.add_argument(
+        "--detect",
+        action="store_true",
+        help="ask the node on the port which board it is, read the chip (family, MAC, flash size) and exit",
+    )
     parser.add_argument(
         "--profile",
         type=Path,
@@ -33,7 +37,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--check", action="store_true", help="only report the settings that differ from the profile")
     parser.add_argument("--flash", metavar="VERSION", help="erase the flash and install this firmware version first")
-    parser.add_argument("--board", help="build target of the board to install, e.g. heltec-v3 (with --flash)")
+    parser.add_argument(
+        "--board",
+        help="build target of the board to install, e.g. heltec-v3 (with --flash); "
+        "taken from the running node when omitted, which must then answer",
+    )
     parser.add_argument("--backup", type=Path, metavar="FILE", help="export the node's settings to FILE before the flash")
     parser.add_argument("--yes", action="store_true", help="do not ask before erasing the flash")
     args = parser.parse_args(argv)
@@ -55,6 +63,7 @@ def main(argv: list[str] | None = None) -> int:
         if not args.port:
             parser.error("--port is required")
         if args.detect:
+            provision.probe_node(args.port, progress)
             provision.detect_chip(args.port, progress)
             return 0
 
@@ -63,9 +72,7 @@ def main(argv: list[str] | None = None) -> int:
             profile = provision.DEFAULT_PROFILE
         flash = None
         if args.flash:
-            if not args.board:
-                parser.error("--flash needs --board")
-            flash = FlashParams(board=args.board, version=args.flash, backup=args.backup)
+            flash = FlashParams(version=args.flash, board=args.board, backup=args.backup)
         elif args.board or args.backup:
             parser.error("--board and --backup only make sense with --flash")
         if profile is None and flash is None:

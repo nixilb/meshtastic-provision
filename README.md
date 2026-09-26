@@ -38,9 +38,12 @@ refuse to start while another process does.
 uv run provision_gui.py
 ```
 
-Pick the port (Refresh after plugging the node), press Detect to read the
-chip (family, MAC, flash size; the board list is then reduced to that
-family), choose the board, the firmware version and the profile, then:
+Pick the port (Refresh after plugging the node) and press Detect: it asks
+the node which board it is (a running firmware reports its build target,
+e.g. `heltec-v3`, and its MAC address), then reads the chip (family, MAC,
+flash size). The board list is reduced to the chip's family and the node's
+board is preselected. A blank board answers nothing: choose it by hand.
+Choose the firmware version and the profile, then:
 
 - Flash: after a confirmation, erases the flash, installs the firmware, waits
   for the node to boot, applies the profile and verifies it. With the
@@ -59,33 +62,38 @@ uv run provision_cli.py --list-ports | --list-boards | --list-versions
 uv run provision_cli.py --port /dev/ttyUSB0 --detect
 uv run provision_cli.py --port /dev/ttyUSB0 --profile node-profile.yaml --check
 uv run provision_cli.py --port /dev/ttyUSB0 --profile node-profile.yaml
-uv run provision_cli.py --port /dev/ttyUSB0 --board heltec-v3 --flash 2.7.26.54e0d8d \
-    --profile node-profile.yaml [--backup before.yaml] [--yes]
+uv run provision_cli.py --port /dev/ttyUSB0 --flash 2.7.26.54e0d8d \
+    --profile node-profile.yaml [--board heltec-v3] [--backup before.yaml] [--yes]
 ```
 
 `--profile` defaults to `~/.config/meshtastic/node-profile.yaml` when that
-file exists. `--flash` asks for a typed `yes` before erasing unless `--yes`
-is given. Exit code 0 when the node matches the profile at the end, 1
-otherwise.
+file exists. `--board` is taken from the running node when omitted; when
+given, it must match what the node reports. A blank board reports nothing,
+so `--board` is required then. `--flash` asks for a typed `yes` before
+erasing unless `--yes` is given. Exit code 0 when the node matches the
+profile at the end, 1 otherwise.
 
 ## What a flash does
 
 Like the firmware's `bin/device-install.sh` and the web flasher:
 
-1. Reads the board's manifest for the version
+1. Asks the node on the port which board it is (up to 12 s; a blank board
+   does not answer) and, when asked, backs up its settings.
+2. Reads the board's manifest for the version
    (`firmware-<version>/firmware-<board>-<version>.mt.json` on
    `meshtastic.github.io`): file names, MD5s and the partition table.
-2. Downloads the factory image (bootloader, partition table, application),
+3. Downloads the factory image (bootloader, partition table, application),
    the OTA loader (partition `app1`) and the file system image (partition
    `spiffs`) into `~/.cache/meshtastic-provision/`, checking size and MD5
    on every use.
-3. Reads the chip with esptool: its family must be the manifest's
-   (`esp32s3` for a Heltec V3) and its flash large enough for the partition
-   table. The node's identity cannot be checked before a full install:
-   choose the board carefully.
-4. Erases the whole flash, writes the three images at their offsets and
+4. Reads the chip with esptool: its family must be the manifest's
+   (`esp32s3` for a Heltec V3), its flash large enough for the partition
+   table, and its MAC address the one the node reported, so the wrong
+   board plugged in by mistake is refused. When no node answered, the
+   identity cannot be checked: choose the board carefully.
+5. Erases the whole flash, writes the three images at their offsets and
    verifies them, then restarts the chip.
-5. Waits for the node to answer on the port (first boot: 15 to 30 s) and
+6. Waits for the node to answer on the port (first boot: 15 to 30 s) and
    goes on with the profile.
 
 The node comes back with default settings and a new private key: other

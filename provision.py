@@ -674,47 +674,120 @@ def _walk(message: Any, wanted: dict[str, Any], path: str, apply: bool) -> list[
 
 
 @dataclass
-class NodeState:
-    """What the node reports: names and the settings the profile may name."""
+class NodeIdentity:
+    """What a running node says about itself."""
 
     node_id: str
     long_name: str
     short_name: str
     firmware: str
+    # Build target the firmware was made for (`MyNodeInfo.pio_env`, e.g.
+    # `heltec-v3`); empty on firmware older than 2.5.
+    pio_env: str
+    hw_model: str  # e.g. `HELTEC_V3`
+    mac: str | None  # `aa:bb:cc:dd:ee:ff`, the ESP32's base MAC
+
+    def __str__(self) -> str:
+        board = self.pio_env or self.hw_model or "unknown board"
+        return f"{self.node_id} {self.long_name!r}, {board}, firmware {self.firmware or '?'}"
 
 
-def connect_node(port: str, timeout: int = 60) -> Any:
-    """A `SerialInterface` to the node on `port`, with its settings and
-    channels received. Raises [`ProvisionError`] when nothing answers."""
+# How long a probe waits for a node to answer: a running node sends its
+# settings within a few seconds, a blank chip never does.
+PROBE_TIMEOUT_S = 12.0
+
+
+def _serial_interface_class() -> type:
     import meshtastic.serial_interface
+
+    class ProvisionSerialInterface(meshtastic.serial_interface.SerialInterface):
+        """`SerialInterface` whose connection wait is configurable: the
+        library's is fixed at 30 s, too long when probing a blank board."""
+
+        connect_timeout = 30.0
+
+        def _waitConnected(self, timeout: float = 30.0) -> None:  # noqa: N802 - library name
+            super()._waitConnected(timeout=self.connect_timeout)
+
+    return ProvisionSerialInterface
+
+
+def connect_node(port: str, timeout: int = 60, connect_timeout: float = 30.0) -> Any:
+    """A `SerialInterface` to the node on `port`, with its settings and
+    channels received. Raises [`ProvisionError`] when nothing answers
+    within `connect_timeout` seconds; the port is released either way."""
     from meshtastic.mesh_interface import MeshInterface
 
+    iface = _serial_interface_class()(devPath=port, connectNow=False, timeout=timeout)
+    iface.connect_timeout = connect_timeout
     try:
-        iface = meshtastic.serial_interface.SerialInterface(devPath=port, timeout=timeout)
-    except (MeshInterface.MeshInterfaceError, OSError, SystemExit) as err:
-        raise ProvisionError(f"no node answers on {port}: {err}") from err
-    try:
+        iface.connect()
         iface.waitForConfig()
         if not iface.localNode.waitForConfig("channels"):
             raise ProvisionError(f"{port}: the node did not send its channels")
         if iface.localNode.moduleConfig is None:
             raise ProvisionError(f"{port}: the node did not send its module settings")
+    except (MeshInterface.MeshInterfaceError, OSError, SystemExit) as err:
+        iface.close()
+        raise ProvisionError(f"no node answers on {port}: {err}") from err
     except Exception:
         iface.close()
         raise
     return iface
 
 
-def node_state(iface: Any) -> NodeState:
+def node_identity(iface: Any) -> NodeIdentity:
+    import base64
+
     info = iface.getMyNodeInfo() or {}
     user = info.get("user") or {}
     metadata = iface.metadata
-    return NodeState(
+    mac = None
+    if user.get("macaddr"):
+        raw = base64.b64decode(user["macaddr"])
+        if len(raw) == 6:
+            mac = ":".join(f"{b:02x}" for b in raw)
+    return NodeIdentity(
         node_id=user.get("id", "?"),
         long_name=user.get("longName", ""),
         short_name=user.get("shortName", ""),
         firmware=getattr(metadata, "firmware_version", "") if metadata else "",
+        pio_env=getattr(iface.myInfo, "pio_env", "") if iface.myInfo else "",
+        hw_model=user.get("hwModel", ""),
+        mac=mac,
     )
+
+
+def probe_node(port: str, progress: Progress) -> NodeIdentity | None:
+    """The identity of the node running on `port`, or None when nothing
+    answers (a blank or bricked board). The connection is closed again."""
+    ensure_port_free(port)
+    progress.log(f"probing the node on {port} (up to {PROBE_TIMEOUT_S:.0f} s; a blank board does not answer)")
+    try:
+        iface = connect_node(port, timeout=30, connect_timeout=PROBE_TIMEOUT_S)
+    except ProvisionError as err:
+        progress.log(f"no node answers: {err}")
+        return None
+    try:
+        identity = node_identity(iface)
+    finally:
+        iface.close()
+    progress.log(f"node: {identity}")
+    return identity
+
+
+def board_of(identity: NodeIdentity | None, chosen: str | None) -> str:
+    """The build target to install: the node's own when it reports one,
+    which a chosen one must then match; else the chosen one."""
+    if identity and identity.pio_env:
+        if chosen and chosen != identity.pio_env:
+            raise ProvisionError(f"the node says it is a {identity.pio_env}, not a {chosen}")
+        return identity.pio_env
+    if identity and not identity.pio_env and not chosen:
+        raise ProvisionError(f"the node's firmware does not report its board ({identity.hw_model or 'unknown model'}): give the board")
+    if not chosen:
+        raise ProvisionError("no node answers on the port, so the board must be given")
+    return chosen
 
 
 def wait_for_node(port: str, progress: Progress, first_delay: float, deadline: float = NODE_WAIT_S) -> Any:
@@ -740,7 +813,7 @@ def compare(iface: Any, profile: Profile) -> list[Difference]:
     """Every setting named by the profile whose value on the node differs."""
     node = iface.localNode
     diffs: list[Difference] = []
-    state = node_state(iface)
+    state = node_identity(iface)
     if profile.owner is not None and state.long_name != profile.owner:
         diffs.append(Difference("owner", repr(state.long_name), repr(profile.owner)))
     if profile.owner_short is not None and state.short_name != profile.owner_short:
@@ -793,7 +866,7 @@ def apply_profile(iface: Any, profile: Profile, progress: Progress) -> list[Diff
     progress.log("opening a settings transaction")
     node.beginSettingsTransaction()
     time.sleep(0.5)
-    state = node_state(iface)
+    state = node_identity(iface)
     long_name = profile.owner if profile.owner is not None and profile.owner != state.long_name else None
     short_name = profile.owner_short if profile.owner_short is not None and profile.owner_short != state.short_name else None
     if long_name or short_name:
@@ -845,8 +918,10 @@ def backup_settings(iface: Any, path: Path, progress: Progress) -> None:
 
 @dataclass
 class FlashParams:
-    board: str  # platformio target, e.g. `heltec-v3`
     version: str  # e.g. `2.7.26.54e0d8d`
+    # Build target, e.g. `heltec-v3`. None: taken from the running node,
+    # which must then answer. Given: must match the node when one answers.
+    board: str | None = None
     backup: Path | None = None
 
 
@@ -862,7 +937,7 @@ class RunParams:
 
 @dataclass
 class RunResult:
-    state: NodeState | None
+    state: NodeIdentity | None
     written: list[Difference]
     remaining: list[Difference]
 
@@ -882,22 +957,30 @@ def run(params: RunParams, progress: Progress) -> RunResult:
     if params.flash:
         if params.check_only:
             raise ProvisionError("--check and --flash cannot be combined")
-        progress.log(f"reading the manifest of {params.flash.board} {params.flash.version}")
-        man = manifest(params.flash.version, params.flash.board)
+        # Ask the running node, if any, which board it is, before touching
+        # the chip (detecting it restarts the node); back up in the same
+        # connection.
+        identity = probe_node(params.port, progress)
         if params.flash.backup:
-            # Before touching the chip: detecting it restarts the node.
-            progress.log("connecting to the node for the backup")
+            if identity is None:
+                raise ProvisionError("no node answers, so its settings cannot be backed up: retry without the backup")
             iface = connect_node(params.port)
             try:
                 backup_settings(iface, params.flash.backup, progress)
             finally:
                 iface.close()
             time.sleep(1)
+        board = board_of(identity, params.flash.board)
+        progress.log(f"board: {board}" + (" (reported by the node)" if identity and identity.pio_env else " (chosen)"))
+        progress.log(f"reading the manifest of {board} {params.flash.version}")
+        man = manifest(params.flash.version, board)
         info = detect_chip(params.port, progress)
         check_chip(info, man)
+        if identity and identity.mac and identity.mac != info.mac:
+            raise ProvisionError(f"the chip on {params.port} ({info.mac}) is not the node that answered ({identity.mac})")
         summary = (
             f"Erase the whole flash of the {info.chip} on {params.port} (MAC {info.mac}) "
-            f"and install {params.flash.board} {params.flash.version}? "
+            f"and install {board} {params.flash.version}? "
             "The node restarts with default settings and a new private key."
         )
         if not params.confirm(summary):
@@ -909,8 +992,8 @@ def run(params: RunParams, progress: Progress) -> RunResult:
         iface = connect_node(params.port)
 
     try:
-        state = node_state(iface)
-        progress.log(f"node {state.node_id} {state.long_name!r}, firmware {state.firmware or '?'}")
+        state = node_identity(iface)
+        progress.log(f"node: {state}")
         if profile.is_empty():
             progress.log("no profile: nothing to configure")
             return RunResult(state, [], [])
@@ -927,7 +1010,7 @@ def run(params: RunParams, progress: Progress) -> RunResult:
         return RunResult(state, [], [])
     iface = wait_for_node(params.port, progress, first_delay=REBOOT_GRACE_S)
     try:
-        state = node_state(iface)
+        state = node_identity(iface)
         remaining = compare(iface, profile)
     finally:
         iface.close()

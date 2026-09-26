@@ -103,8 +103,8 @@ TIPS: dict[str, str] = {
     "the node's Internet traffic when the node has no Wi-Fi of its own. Keep it on: this is what "
     "links your node to the Internet through the app.",
     "module_config.mqtt.map_reporting_enabled": "Publishes your node on the public Meshtastic maps "
-    "(name, board and position at the precision below), in clear, readable by anyone. Off by "
-    "default for privacy.",
+    "(name, board and position at the precision below), in clear, readable by anyone. On by "
+    "default; lower the precision below to show only the area.",
     "module_config.mqtt.map_report_settings.publish_interval_secs": "How often the node updates its "
     "place on the public map, in seconds. 3600 is once an hour.",
     "module_config.mqtt.map_report_settings.position_precision": "How precisely the public map "

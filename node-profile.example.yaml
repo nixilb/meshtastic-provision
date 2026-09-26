@@ -45,8 +45,9 @@ module_config:
     root: msh/EU_868
     # The app connects to the broker on the node's behalf.
     proxy_to_client_enabled: true
-    # Hourly map reports would publish the node's position in clear; off.
-    map_reporting_enabled: false
+    # Show the node on the public Meshtastic maps (hourly report, position
+    # in clear at the precision below, readable by anyone).
+    map_reporting_enabled: true
     map_report_settings:
       publish_interval_secs: 3600
       position_precision: 32

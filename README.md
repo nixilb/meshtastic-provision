@@ -215,6 +215,7 @@ and the icon.
 | `provision_gui.py` | Qt window (PySide6) |
 | `profile_form.py` | The settings form of the window |
 | `timezones.py` | Named time zones (`Europe/Paris`) to and from the node's POSIX rule |
+| `wifi.py` | The Wi-Fi networks this computer sees (NetworkManager), for the Nearby menu |
 | `node-profile.example.yaml` | Documented example profile |
 | `doc/node-setup.md` | The manual set-up of the first node, which the profile automates |
 | `~/.config/meshtastic/node-profile.yaml` | The settings: saved by the window, default profile of the command line |

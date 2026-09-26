@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import copy
 import tempfile
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMenu,
     QMessageBox,
     QPushButton,
     QScrollArea,
@@ -44,6 +46,7 @@ from PySide6.QtWidgets import (
 
 import provision
 import timezones
+import wifi
 from provision import ProvisionError
 
 # The example profile, the source of a new file's defaults.
@@ -56,7 +59,7 @@ class Field:
 
     path: str  # dotted path in the profile; `channels[0]` is a list entry
     label: str
-    kind: str  # `str`, `secret`, `bool`, `int`, `enum` or `timezone`
+    kind: str  # `str`, `secret`, `bool`, `int`, `enum`, `timezone` or `ssid`
     help: str = ""
     choices: tuple[str, ...] = ()  # for `enum`
     maximum: int = 1_000_000_000  # for `int`
@@ -170,7 +173,7 @@ FIELDS: tuple[tuple[str, tuple[Field, ...]], ...] = (
         "Wi-Fi",
         (
             Field("config.network.wifi_enabled", "Wi-Fi on", "bool", "on an ESP32, Wi-Fi turns Bluetooth off"),
-            Field("config.network.wifi_ssid", "Network", "str"),
+            Field("config.network.wifi_ssid", "Network", "ssid", "type it, or pick a nearby one"),
             Field("config.network.wifi_psk", "Password", "secret", "8 characters or more"),
         ),
     ),
@@ -442,7 +445,7 @@ class ProfileForm(QWidget):
             widget.currentIndexChanged.connect(self._touched)  # type: ignore[attr-defined]
         elif field.kind == "int":
             widget.valueChanged.connect(self._touched)  # type: ignore[attr-defined]
-        elif field.kind == "secret":
+        elif field.kind in ("secret", "ssid"):
             widget.edit.textChanged.connect(self._touched)  # type: ignore[attr-defined]
         elif field.kind == "timezone":
             widget.currentTextChanged.connect(self._touched)  # type: ignore[attr-defined]
@@ -468,6 +471,8 @@ class ProfileForm(QWidget):
             box = _TimezoneBox()
             _no_wheel(box)
             return box
+        if field.kind == "ssid":
+            return _SsidEdit()
         edit = QLineEdit()
         edit.setClearButtonEnabled(True)
         edit.setMinimumWidth(120)
@@ -482,7 +487,7 @@ class ProfileForm(QWidget):
                 _unset(data, field.path)
                 continue
             value = row.value()
-            if field.kind in ("str", "secret"):
+            if field.kind in ("str", "secret", "ssid"):
                 value = str(value).strip()
                 if not value:
                     raise ProvisionError(f"{field.label}: empty; untick it to leave the node's value")
@@ -513,6 +518,71 @@ class ProfileForm(QWidget):
         self.data = data
         self._set_dirty(False)
         return self.path
+
+
+class _SsidEdit(QWidget):
+    """The Wi-Fi network's name: typed, or picked from the networks this
+    computer sees (a menu filled by a scan in the background, a few
+    seconds). Networks seen on 5 GHz only are shown greyed: the node
+    cannot join them."""
+
+    scanned = Signal(object)  # list[wifi.Network] or the error text
+
+    def __init__(self) -> None:
+        super().__init__()
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.edit = QLineEdit()
+        self.edit.setClearButtonEnabled(True)
+        self.edit.setMinimumWidth(120)
+        self.nearby = QToolButton()
+        self.nearby.setText("Nearby")
+        self.nearby.setToolTip("Networks this computer sees; the node needs a 2.4 GHz one")
+        self.nearby.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.menu = QMenu(self.nearby)
+        self.menu.aboutToShow.connect(self._scan)
+        self.nearby.setMenu(self.menu)
+        self.scanned.connect(self._fill)
+        self._scanning = False
+        layout.addWidget(self.edit, 1)
+        layout.addWidget(self.nearby)
+        self.setFocusProxy(self.edit)
+
+    def text(self) -> str:
+        return self.edit.text()
+
+    def setText(self, text: str) -> None:  # noqa: N802 - Qt naming, as QLineEdit
+        self.edit.setText(text)
+
+    def _scan(self) -> None:
+        if self._scanning:
+            return
+        self._scanning = True
+        self.menu.clear()
+        self.menu.addAction("Looking for networks…").setEnabled(False)
+
+        def work() -> None:
+            try:
+                self.scanned.emit(wifi.scan())
+            except ProvisionError as err:
+                self.scanned.emit(str(err))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _fill(self, result: object) -> None:
+        self._scanning = False
+        self.menu.clear()
+        if isinstance(result, str):
+            self.menu.addAction(result).setEnabled(False)
+            return
+        if not result:
+            self.menu.addAction("No network found").setEnabled(False)
+            return
+        for network in result:  # type: ignore[union-attr]
+            label = str(network) if network.band_24 else f"{network}  5 GHz only: the node cannot join it"
+            action = self.menu.addAction(label)
+            action.setEnabled(network.band_24)
+            action.triggered.connect(lambda _checked=False, ssid=network.ssid: self.edit.setText(ssid))
 
 
 class _TimezoneBox(QComboBox):

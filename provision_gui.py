@@ -21,6 +21,7 @@ from typing import Callable
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import (
+    QStackedWidget,
     QApplication,
     QCheckBox,
     QComboBox,
@@ -44,7 +45,7 @@ from profile_form import ProfileForm
 from provision import FlashParams, Progress, ProvisionError, RunParams
 
 INTRO = (
-    "Prepare a Meshtastic node plugged in over USB. Close meshtastic-desktop first: it holds the port. "
+    "Prepare a Meshtastic node plugged in over USB. "
     "A node plugged in is detected by itself: it says which board it is (a blank board cannot: choose it "
     "by hand) and its chip is read. 'Flash & configure' erases the whole flash, installs the chosen firmware, then applies the settings on "
     "the right; the node restarts with a new private key, which other nodes will have to learn again. "
@@ -92,14 +93,32 @@ class Window(QMainWindow):
         self._watch = QTimer(self)
         self._watch.timeout.connect(self._watch_ports)
         self._watch.start(1000)
-        if self._known_ports:
+        if self._watch_app():
+            self._known_ports = set()  # detected once the app is closed
+        elif self._known_ports:
             QTimer.singleShot(500, lambda: self._port_present(self.port.currentData(), delay_ms=0))
 
     # -- layout ---------------------------------------------------------
 
     def _build(self) -> None:
+        # Two pages: the tool, or, while meshtastic-desktop runs, only an
+        # alert asking to quit it (it holds the serial port and would
+        # overwrite the settings written for it).
+        self.pages = QStackedWidget()
+        self.setCentralWidget(self.pages)
         splitter = QSplitter(Qt.Orientation.Horizontal)
-        self.setCentralWidget(splitter)
+        self.pages.addWidget(splitter)
+        alert = QLabel(
+            "meshtastic-desktop is running.\n\n"
+            "Quit it to prepare a node: it holds the node's USB port.\n"
+            "This window goes on by itself once it is closed."
+        )
+        alert.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        alert.setWordWrap(True)
+        font = alert.font()
+        font.setPointSizeF(font.pointSizeF() * 1.4)
+        alert.setFont(font)
+        self.pages.addWidget(alert)
 
         left = QWidget()
         column = QVBoxLayout(left)
@@ -356,8 +375,18 @@ class Window(QMainWindow):
         self.port.setCurrentIndex(index if index >= 0 else (0 if self.port.count() else -1))
         self._update_rows()
 
+    def _watch_app(self) -> bool:
+        """Show the alert page while meshtastic-desktop runs. Returns
+        whether it runs."""
+        running = bool(provision.app_running())
+        self.pages.setCurrentIndex(1 if running else 0)
+        return running
+
     def _watch_ports(self) -> None:
-        """Every second: react to a port appearing or disappearing."""
+        """Every second: react to meshtastic-desktop and to a port
+        appearing or disappearing."""
+        if self._watch_app():
+            return
         ports = {p.device for p in provision.serial_ports()}
         added = ports - self._known_ports
         removed = self._known_ports - ports

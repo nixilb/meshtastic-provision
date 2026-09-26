@@ -16,6 +16,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 import provision
+from profile_editor import ProfileEditor
 from provision import FlashParams, Progress, ProvisionError, RunParams
 
 INTRO = (
@@ -84,7 +85,10 @@ class App:
         self.profile.grid(row=6, column=1, columnspan=2, sticky="ew", **pad)
         if provision.DEFAULT_PROFILE.is_file():
             self.profile.insert(0, str(provision.DEFAULT_PROFILE))
-        ttk.Button(frame, text="Browse", command=self._browse_profile).grid(row=6, column=3, **pad)
+        profile_buttons = ttk.Frame(frame)
+        profile_buttons.grid(row=6, column=3, **pad)
+        ttk.Button(profile_buttons, text="Browse", command=self._browse_profile).pack(side="left")
+        ttk.Button(profile_buttons, text="Edit", command=self._edit_profile).pack(side="left", padx=(4, 0))
 
         self.backup = tk.BooleanVar(value=True)
         ttk.Checkbutton(
@@ -245,6 +249,18 @@ class App:
         if path:
             self.profile.delete(0, "end")
             self.profile.insert(0, path)
+
+    def _edit_profile(self) -> None:
+        """Open the form on the profile in the field, or on the default
+        path for a new one; the field takes the saved path."""
+        path = self._profile_path(required=False) or provision.DEFAULT_PROFILE
+
+        def saved(path: Path) -> None:
+            self.profile.delete(0, "end")
+            self.profile.insert(0, str(path))
+            self._append(f"profile saved to {path}")
+
+        ProfileEditor(self.root, path, saved)
 
     def _profile_path(self, required: bool) -> Path | None:
         text = self.profile.get().strip()

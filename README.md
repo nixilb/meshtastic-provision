@@ -107,7 +107,13 @@ drive) are not, yet.
 ## Profile
 
 A YAML file; `node-profile.example.yaml` is documented field by field and
-matches the node meshtastic-desktop is developed with. Copy it to
+matches the node meshtastic-desktop is developed with. The window's Edit
+button (next to the profile field) opens a form on the profile: every
+setting of the example with a checkbox saying whether the profile sets it,
+a choice list for enum values, masked fields for the passwords. Save
+validates the result as a run would and writes the file, readable by its
+owner only. A new profile starts from the example without its Wi-Fi
+placeholders. By hand: copy the example to
 `~/.config/meshtastic/node-profile.yaml`, fill in the Wi-Fi and broker
 secrets, and keep that copy out of any repository (`.gitignore` already
 excludes `node-profile.yaml` here).
@@ -159,6 +165,7 @@ of remaining differences.
 | `provision.py` | The steps: ports, downloads, chip, flash, profile, compare, apply |
 | `provision_cli.py` | Command line |
 | `provision_gui.py` | Tkinter window |
+| `profile_editor.py` | The profile form opened by the window's Edit button |
 | `node-profile.example.yaml` | Documented example profile |
 | `~/.config/meshtastic/node-profile.yaml` | Default profile (not tracked) |
 | `~/.config/meshtastic/backups/` | Settings exported before a flash (window) |

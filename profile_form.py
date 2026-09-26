@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QCompleter,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -42,6 +43,7 @@ from PySide6.QtWidgets import (
 )
 
 import provision
+import timezones
 from provision import ProvisionError
 
 # The example profile, the source of a new file's defaults.
@@ -54,7 +56,7 @@ class Field:
 
     path: str  # dotted path in the profile; `channels[0]` is a list entry
     label: str
-    kind: str  # `str`, `secret`, `bool`, `int` or `enum`
+    kind: str  # `str`, `secret`, `bool`, `int`, `enum` or `timezone`
     help: str = ""
     choices: tuple[str, ...] = ()  # for `enum`
     maximum: int = 1_000_000_000  # for `int`
@@ -69,8 +71,8 @@ TIPS: dict[str, str] = {
     "owner_short": "A short tag of up to 4 characters, shown where there is little room: map "
     "markers, the node's small screen, message bubbles. Letters, digits or an emoji.",
     "config.device.tzdef": "The node's time zone, so the times on its screen and in its logs are "
-    "local. The default is France and most of Western Europe, summer time included. Only change "
-    "it if the node is elsewhere.",
+    "local, summer time included. Choose the zone of the place where the node is, named after its "
+    "largest city (Europe/Paris for France). Type part of the name to find it.",
     "config.lora.region": "The radio band the node may legally transmit on. It depends on the "
     "country: EU_868 for France and the European Union, US for North America, and so on. A node "
     "with no region set stays silent. A wrong region breaks the law and reaches no one.",
@@ -153,7 +155,7 @@ FIELDS: tuple[tuple[str, tuple[Field, ...]], ...] = (
         (
             Field("owner", "Name", "str", "long name, shown in the mesh"),
             Field("owner_short", "Short name", "str", "4 characters at most"),
-            Field("config.device.tzdef", "Time zone", "str", "POSIX form, e.g. CET-1CEST,M3.5.0,M10.5.0/3"),
+            Field("config.device.tzdef", "Time zone", "timezone", "type a city to search"),
         ),
     ),
     (
@@ -296,6 +298,8 @@ class _Row:
             return self.widget.currentText()  # type: ignore[attr-defined]
         if self.field.kind == "int":
             return self.widget.value()  # type: ignore[attr-defined]
+        if self.field.kind == "timezone":
+            return self.widget.rule()  # type: ignore[attr-defined]
         return self.widget.text()  # type: ignore[attr-defined]
 
     def set(self, current: Any) -> None:
@@ -308,6 +312,8 @@ class _Row:
             self.widget.setCurrentIndex(max(index, 0))  # type: ignore[attr-defined]
         elif self.field.kind == "int":
             self.widget.setValue(int(current) if current is not None else 0)  # type: ignore[attr-defined]
+        elif self.field.kind == "timezone":
+            self.widget.set_rule(None if current is None else str(current))  # type: ignore[attr-defined]
         else:
             self.widget.setText("" if current is None else str(current))  # type: ignore[attr-defined]
 
@@ -438,6 +444,8 @@ class ProfileForm(QWidget):
             widget.valueChanged.connect(self._touched)  # type: ignore[attr-defined]
         elif field.kind == "secret":
             widget.edit.textChanged.connect(self._touched)  # type: ignore[attr-defined]
+        elif field.kind == "timezone":
+            widget.currentTextChanged.connect(self._touched)  # type: ignore[attr-defined]
         else:
             widget.textChanged.connect(self._touched)  # type: ignore[attr-defined]
 
@@ -456,6 +464,10 @@ class ProfileForm(QWidget):
             return spin
         if field.kind == "secret":
             return _SecretEdit()
+        if field.kind == "timezone":
+            box = _TimezoneBox()
+            _no_wheel(box)
+            return box
         edit = QLineEdit()
         edit.setClearButtonEnabled(True)
         edit.setMinimumWidth(120)
@@ -501,6 +513,48 @@ class ProfileForm(QWidget):
         self.data = data
         self._set_dirty(False)
         return self.path
+
+
+class _TimezoneBox(QComboBox):
+    """Named time zones (`Europe/Paris`), searchable by typing any part of
+    the name; the node gets the zone's POSIX rule (see timezones.py). A
+    rule no named zone has (set by hand elsewhere) is kept as a last entry
+    so it is not lost."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setEditable(True)
+        self.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self.addItems(timezones.names())
+        completer = self.completer()
+        completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        self._custom: str | None = None
+
+    def set_rule(self, rule: str | None) -> None:
+        """Show the zone of `rule`; the computer's own zone when None."""
+        if rule is None:
+            name = timezones.local_name() or "Europe/Paris"
+        else:
+            name = timezones.name_for(rule)
+            if name is None:
+                self._custom = rule
+                label = f"custom rule: {rule}"
+                if self.findText(label) < 0:
+                    self.addItem(label)
+                name = label
+        self.setCurrentText(name)
+
+    def rule(self) -> str:
+        """The POSIX rule of the shown zone; raises on an unknown name."""
+        text = self.currentText().strip()
+        if self._custom and text == f"custom rule: {self._custom}":
+            return self._custom
+        rule = timezones.posix(text) if text in timezones.names() else None
+        if rule is None:
+            raise ProvisionError(f"Time zone: {text!r} is not a known zone; pick one from the list")
+        return rule
 
 
 class _WheelGuard(QObject):

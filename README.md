@@ -167,6 +167,9 @@ Rules:
 - The `security` section and channel keys (`psk`) are refused: the node
   keeps its own keys. Repeated and byte fields are not supported.
 - `network.wifi_psk` must be 8 characters or more (the firmware's rule).
+- `config.device.tzdef` is the POSIX rule the node needs
+  (`CET-1CEST,M3.5.0,M10.5.0/3`); the window shows and takes named zones
+  (`Europe/Paris`) and converts with the system's time zone database.
 - `app`: meshtastic-desktop's own settings on this computer
   (`~/.config/meshtastic/settings.json`), the booleans `auto_connect`,
   `mqtt_observer`, `mqtt_observer_all_regions`, `map_world_nodes` and
@@ -211,6 +214,7 @@ and the icon.
 | `provision_cli.py` | Command line |
 | `provision_gui.py` | Qt window (PySide6) |
 | `profile_form.py` | The settings form of the window |
+| `timezones.py` | Named time zones (`Europe/Paris`) to and from the node's POSIX rule |
 | `node-profile.example.yaml` | Documented example profile |
 | `doc/node-setup.md` | The manual set-up of the first node, which the profile automates |
 | `~/.config/meshtastic/node-profile.yaml` | The settings: saved by the window, default profile of the command line |

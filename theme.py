@@ -12,7 +12,7 @@ import math
 
 from PySide6.QtCore import QPointF, QRectF, QSettings, Qt
 from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPalette, QPen, QPixmap
-from PySide6.QtWidgets import QApplication, QSizePolicy, QToolBar, QWidget
+from PySide6.QtWidgets import QApplication, QProxyStyle, QSizePolicy, QStyle, QStyleFactory, QToolBar, QWidget
 
 LIGHT = "light"
 DARK = "dark"
@@ -84,9 +84,23 @@ QProgressBar::chunk {{
 """
 
 
+class _Style(QProxyStyle):
+    """Fusion, without the desktop theme's icons on dialog buttons (a red
+    cross on No/Cancel/Discard, a green tick on Yes/OK): plain buttons like
+    every other one of the window."""
+
+    def __init__(self) -> None:
+        super().__init__(QStyleFactory.create("Fusion"))
+
+    def styleHint(self, hint, option=None, widget=None, returnData=None):  # noqa: N802 - Qt naming
+        if hint == QStyle.StyleHint.SH_DialogButtonBox_ButtonsHaveIcons:
+            return 0
+        return super().styleHint(hint, option, widget, returnData)
+
+
 def apply_scheme(scheme: str) -> None:
     app = QApplication.instance()
-    app.setStyle("Fusion")
+    app.setStyle(_Style())
     app.setPalette(_dark_palette() if scheme == DARK else _light_palette())
     # An application style sheet (not one on the widget) so switching the
     # scheme restyles the bar; it only matches progress bars.

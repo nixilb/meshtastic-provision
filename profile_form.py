@@ -103,10 +103,10 @@ TIPS: dict[str, str] = {
     "module_config.mqtt.map_reporting_enabled": "Publishes your node on the public Meshtastic maps "
     "(name, board and position at the precision below), in clear, readable by anyone. Off by "
     "default for privacy.",
-    "module_config.mqtt.map_report_settings.publish_interval_secs": "How often the node sends its "
-    "map report, in seconds. 3600 is once an hour.",
-    "module_config.mqtt.map_report_settings.position_precision": "How precisely the map report "
-    "gives your position, in bits: 32 is exact, 16 about 700 m, 13 about 1.5 km, 11 about 6 km. "
+    "module_config.mqtt.map_report_settings.publish_interval_secs": "How often the node updates its "
+    "place on the public map, in seconds. 3600 is once an hour.",
+    "module_config.mqtt.map_report_settings.position_precision": "How precisely the public map "
+    "shows your position, in bits: 32 is exact, 16 about 700 m, 13 about 1.5 km, 11 about 6 km. "
     "Lower is more private.",
     "channels[0].role": "The main channel, the one everybody in the region shares (LongFast). "
     "Leave it PRIMARY.",
@@ -178,9 +178,9 @@ FIELDS: tuple[tuple[str, tuple[Field, ...]], ...] = (
             Field("module_config.mqtt.encryption_enabled", "Encrypted packets", "bool"),
             Field("module_config.mqtt.root", "Topic root", "str", "e.g. msh/EU_868"),
             Field("module_config.mqtt.proxy_to_client_enabled", "Proxy through the app", "bool", "the app connects to the broker for the node"),
-            Field("module_config.mqtt.map_reporting_enabled", "Map reports", "bool", "publishes the position in clear"),
-            Field("module_config.mqtt.map_report_settings.publish_interval_secs", "Map report interval", "int", "seconds"),
-            Field("module_config.mqtt.map_report_settings.position_precision", "Map report precision", "int", "1 to 32 bits", maximum=32),
+            Field("module_config.mqtt.map_reporting_enabled", "Show this node on the public map", "bool", "position in clear, readable by anyone"),
+            Field("module_config.mqtt.map_report_settings.publish_interval_secs", "Public map: update interval", "int", "seconds"),
+            Field("module_config.mqtt.map_report_settings.position_precision", "Public map: position precision", "int", "1 to 32 bits", maximum=32),
         ),
     ),
     (

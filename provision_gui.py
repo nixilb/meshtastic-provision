@@ -269,13 +269,19 @@ class Window(QMainWindow):
 
     def _update_rows(self) -> None:
         """The frame while a node is plugged in, else the hint; inside it,
-        the port only when there is a choice, the node line once it says
-        something, the backup only for a node that answered."""
+        the port only when there is a choice, the node line, board and
+        firmware once detection has spoken, the backup only for a node that
+        answered."""
         plugged = self.port.count() > 0
         self.plug_hint.setVisible(not plugged)
         self.device_box.setVisible(plugged)
         self.device_form.setRowVisible(self.port, self.port.count() > 1)
-        self.device_form.setRowVisible(self.node_label, bool(self.node_label.text()))
+        detected = bool(self.node_label.text())  # the node answered, or said nothing
+        self.device_form.setRowVisible(self.node_label, detected)
+        # Board and firmware only once detection has spoken: before, the
+        # board may still be filled in by the node itself.
+        self.device_form.setRowVisible(self.board, detected)
+        self.device_form.setRowVisible(self.version, detected)
         self.device_form.setRowVisible(self.backup, self.identity is not None)
         self._update_buttons()
 

@@ -241,6 +241,15 @@ class Window(QMainWindow):
         cursor.insertText(text + "\n", fmt)
         self.log.setTextCursor(cursor)
         self.log.ensureCursorVisible()
+        try:
+            provision.LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            with open(provision.LOG_PATH, "a", encoding="utf-8") as f:
+                f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {text}\n")
+        except OSError as err:
+            # Shown once in the pane; the window works on without the file.
+            if not getattr(self, "_log_file_failed", False):
+                self._log_file_failed = True
+                self.log.appendPlainText(f"cannot write {provision.LOG_PATH}: {err}")
 
     def _set_bar(self, done: int, total: int, label: str) -> None:
         self.bar.setValue(0 if total <= 0 else min(1000, done * 1000 // total))

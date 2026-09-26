@@ -57,6 +57,9 @@ DEFAULT_PROFILE = (
     Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "meshtastic" / "node-profile.yaml"
 )
 
+# Every line the window shows in its log pane is also appended here, so a
+# failed run can be read afterwards.
+LOG_PATH = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state")) / "meshtastic-provision" / "provision.log"
 # Serial speed for flashing (the ESP32-S3 USB bridges handle it well).
 FLASH_BAUD = 921_600
 # The firmware reboots 5 s after a committed settings transaction that needs

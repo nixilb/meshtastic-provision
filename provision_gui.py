@@ -81,7 +81,7 @@ class Window(QMainWindow):
         self._answer: dict[str, bool] = {}
         self._answered = threading.Event()
         self._build()
-        self._update_buttons()
+        self._update_rows()
         theme.install(self)
         self._connect()
         self._refresh_ports()
@@ -108,33 +108,35 @@ class Window(QMainWindow):
         intro.setWordWrap(True)
         column.addWidget(intro)
 
-        device = QGroupBox("Node")
-        form = QFormLayout(device)
+        # Nothing plugged in: a single line says what to do.
+        self.plug_hint = QLabel("Plug a Meshtastic node, or a new board, in over USB.")
+        self.plug_hint.setStyleSheet("font-size: 12pt; padding: 12px 4px;")
+        column.addWidget(self.plug_hint)
+
+        # One frame for the plugged node: what it is, what to install on it,
+        # and the actions. Shown only while a node is plugged in; each row
+        # only when it has something to say (see _update_rows).
+        self.device_box = QGroupBox("Plugged node")
+        self.device_form = form = QFormLayout(self.device_box)
         self.port = QComboBox()
-        self.port.setPlaceholderText("plug the node in")
         # A port picked by hand (several nodes plugged in) is detected too.
         self.port.activated.connect(lambda _index: self._port_present(self.port.currentData(), delay_ms=0))
         form.addRow("Port", self.port)
-        self.node_label = QLabel("waiting for a node")
+        self.node_label = QLabel("")
         self.node_label.setWordWrap(True)
         form.addRow("Node", self.node_label)
         # The chip is still read (it narrows the board list and guards the
         # flash) but not shown: it means nothing to most users.
-        self.chip_label = QLabel("not read yet")
-        column.addWidget(device)
-
-        # What to install: shown only once a node is plugged in.
-        self.firmware_box = QGroupBox("Firmware to install")
-        form = QFormLayout(self.firmware_box)
+        self.chip_label = QLabel("")
         self.board = QComboBox()
-        self.board.setPlaceholderText("loading the board list...")
+        self.board.setPlaceholderText("choose the board's model")
         self.board.currentIndexChanged.connect(lambda _index: (self._pick_version(), self._update_buttons()))
         form.addRow("Board", self.board)
         self.version = QComboBox()
         self.version.setPlaceholderText("set once a board is chosen")
         self.version.currentIndexChanged.connect(lambda _index: self._update_buttons())
-        form.addRow("Version", self.version)
-        self.backup = QCheckBox("Back up the node's current settings before erasing (needs a working node)")
+        form.addRow("Firmware", self.version)
+        self.backup = QCheckBox("Back up the node's current settings before erasing")
         self.backup.setChecked(True)
         form.addRow("", self.backup)
 
@@ -150,8 +152,7 @@ class Window(QMainWindow):
             buttons.addWidget(button)
         buttons.addStretch(1)
         form.addRow(buttons)
-        self.firmware_box.setVisible(False)
-        column.addWidget(self.firmware_box)
+        column.addWidget(self.device_box)
 
         self.bar = QProgressBar()
         self.bar.setRange(0, 1000)
@@ -244,6 +245,18 @@ class Window(QMainWindow):
         self.busy = busy
         self._update_buttons()
 
+    def _update_rows(self) -> None:
+        """The frame while a node is plugged in, else the hint; inside it,
+        the port only when there is a choice, the node line once it says
+        something, the backup only for a node that answered."""
+        plugged = self.port.count() > 0
+        self.plug_hint.setVisible(not plugged)
+        self.device_box.setVisible(plugged)
+        self.device_form.setRowVisible(self.port, self.port.count() > 1)
+        self.device_form.setRowVisible(self.node_label, bool(self.node_label.text()))
+        self.device_form.setRowVisible(self.backup, self.identity is not None)
+        self._update_buttons()
+
     def _update_buttons(self) -> None:
         """Show each action only when it can run: none while a step runs;
         Flash once a board and a version are chosen; Configure only and
@@ -275,9 +288,14 @@ class Window(QMainWindow):
 
     def _set_node(self, identity: object) -> None:
         self.identity = identity  # type: ignore[assignment]
-        self.node_label.setText(str(identity) if identity else "nothing answers (blank board?)")
+        if identity is None:
+            self.node_label.setText("No Meshtastic firmware on this board: choose its model below.")
+        else:
+            board = identity.pio_env or identity.hw_model or "unknown board"
+            firmware = f", firmware {identity.firmware}" if identity.firmware else ""
+            self.node_label.setText(f"{identity.long_name or identity.node_id} ({board}){firmware}")
         self._fill_boards()
-        self._update_buttons()
+        self._update_rows()
 
     def _set_chip(self, info: object) -> None:
         self.chip = info  # type: ignore[assignment]
@@ -322,7 +340,7 @@ class Window(QMainWindow):
         # listed, so neither detection nor the actions found it.
         index = self.port.findData(current)
         self.port.setCurrentIndex(index if index >= 0 else (0 if self.port.count() else -1))
-        self.firmware_box.setVisible(self.port.count() > 0)
+        self._update_rows()
 
     def _watch_ports(self) -> None:
         """Every second: react to a port appearing or disappearing."""
@@ -336,10 +354,11 @@ class Window(QMainWindow):
         for device in sorted(removed):
             self._append(f"{device} unplugged")
             if device == self.port.currentData() or self.port.count() == 0:
-                self._set_node(None)
+                self.identity = None
                 self.chip = None
-                self.chip_label.setText("not read yet")
-                self.node_label.setText("waiting for a node")
+                self.node_label.setText("")
+                self._fill_boards()
+                self._update_rows()
         for device in sorted(added):
             self._append(f"{device} plugged in")
             self.port.setCurrentIndex(self.port.findData(device))
@@ -483,7 +502,7 @@ class Window(QMainWindow):
             return
         board = self.board.currentData()  # None: the running node must say which it is
         version = self.version.currentData()
-        backup = BACKUP_DIR / f"node-{time.strftime('%Y%m%d-%H%M%S')}.yaml" if self.backup.isChecked() else None
+        backup = BACKUP_DIR / f"node-{time.strftime('%Y%m%d-%H%M%S')}.yaml" if self.backup.isChecked() and self.identity is not None else None
 
         def work() -> None:
             if not version:

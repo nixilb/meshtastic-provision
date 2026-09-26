@@ -39,6 +39,7 @@ from PySide6.QtWidgets import (
 )
 
 import provision
+import theme
 from profile_form import ProfileForm
 from provision import FlashParams, Progress, ProvisionError, RunParams
 
@@ -80,6 +81,7 @@ class Window(QMainWindow):
         self._answer: dict[str, bool] = {}
         self._answered = threading.Event()
         self._build()
+        theme.install(self)
         self._connect()
         self._refresh_ports()
         self._start(self._load_lists, busy=False)
@@ -460,6 +462,7 @@ class Window(QMainWindow):
 def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("meshtastic-provision")
+    app.setOrganizationName("meshtastic-provision")
     window = Window()
     window.show()
     return app.exec()

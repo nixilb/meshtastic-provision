@@ -119,6 +119,11 @@ class Window(QMainWindow):
         form.addRow("Node", self.node_label)
         self.chip_label = QLabel("not read yet")
         form.addRow("Chip", self.chip_label)
+        column.addWidget(device)
+
+        # What to install: shown only once a node is plugged in.
+        self.firmware_box = QGroupBox("Firmware to install")
+        form = QFormLayout(self.firmware_box)
         self.board = QComboBox()
         self.board.setPlaceholderText("loading the board list...")
         self.board.currentIndexChanged.connect(lambda _index: self._pick_version())
@@ -129,7 +134,8 @@ class Window(QMainWindow):
         self.backup = QCheckBox("Back up the node's current settings before erasing (needs a working node)")
         self.backup.setChecked(True)
         form.addRow("", self.backup)
-        column.addWidget(device)
+        self.firmware_box.setVisible(False)
+        column.addWidget(self.firmware_box)
 
         buttons = QHBoxLayout()
         self.flash_button = QPushButton("Flash")
@@ -301,6 +307,7 @@ class Window(QMainWindow):
         # listed, so neither detection nor the actions found it.
         index = self.port.findData(current)
         self.port.setCurrentIndex(index if index >= 0 else (0 if self.port.count() else -1))
+        self.firmware_box.setVisible(self.port.count() > 0)
 
     def _watch_ports(self) -> None:
         """Every second: react to a port appearing or disappearing."""

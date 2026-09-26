@@ -239,12 +239,11 @@ class Window(QMainWindow):
         self.boards, versions = payload  # type: ignore[misc]
         self._fill_boards()
         self.version.clear()
-        self.version.setPlaceholderText("choose a version")
+        self.version.setPlaceholderText("choose the firmware version to install")
         for release in versions:
             self.version.addItem(str(release), release.version)
-        # The newest stable release, not the newest alpha, is the default.
-        stable = next((i for i, r in enumerate(versions) if not r.prerelease), -1)
-        self.version.setCurrentIndex(stable)
+        # No default: the version to install is an explicit choice.
+        self.version.setCurrentIndex(-1)
 
     def _set_node(self, identity: object) -> None:
         self.identity = identity  # type: ignore[assignment]

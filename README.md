@@ -167,6 +167,13 @@ Rules:
 - The `security` section and channel keys (`psk`) are refused: the node
   keeps its own keys. Repeated and byte fields are not supported.
 - `network.wifi_psk` must be 8 characters or more (the firmware's rule).
+- `position`: the node's fixed position, `latitude` and `longitude` in
+  degrees (both or neither) and an optional `altitude` in metres, sent with
+  the admin `set_fixed_position` message, which also turns
+  `config.position.fixed_position` on. The window's "My position" button
+  fills it from this computer's position: the Wi-Fi networks around looked
+  up by BeaconDB (tens of metres where they are mapped), else the public IP
+  address (the town only); the source and precision are shown.
 - `config.device.tzdef` is the POSIX rule the node needs
   (`CET-1CEST,M3.5.0,M10.5.0/3`); the window shows and takes named zones
   (`Europe/Paris`) and converts with the system's time zone database.
@@ -215,6 +222,7 @@ and the icon.
 | `provision_gui.py` | Qt window (PySide6) |
 | `profile_form.py` | The settings form of the window |
 | `timezones.py` | Named time zones (`Europe/Paris`) to and from the node's POSIX rule |
+| `geolocate.py` | This computer's position for "My position" (BeaconDB, then the IP address) |
 | `wifi.py` | The Wi-Fi networks this computer sees (NetworkManager), for the Nearby menu |
 | `node-profile.example.yaml` | Documented example profile |
 | `doc/node-setup.md` | The manual set-up of the first node, which the profile automates |

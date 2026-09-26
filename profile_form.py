@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QCompleter,
+    QDoubleSpinBox,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -44,6 +45,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+import geolocate
 import provision
 import timezones
 import wifi
@@ -59,7 +61,7 @@ class Field:
 
     path: str  # dotted path in the profile; `channels[0]` is a list entry
     label: str
-    kind: str  # `str`, `secret`, `bool`, `int`, `enum`, `timezone` or `ssid`
+    kind: str  # `str`, `secret`, `bool`, `int`, `float`, `enum`, `timezone` or `ssid`
     help: str = ""
     choices: tuple[str, ...] = ()  # for `enum`
     minimum: int = 0  # for `int`
@@ -88,6 +90,14 @@ TIPS: dict[str, str] = {
     "config.lora.config_ok_to_mqtt": "Lets other people's Internet gateways pass your node's "
     "messages on to the Internet. Keep it on so your messages travel further than your radio "
     "reaches.",
+    "position.latitude": "Where the node is, north-south, in degrees (48.8566 for Paris). The node "
+    "has no GPS: it gives this fixed position to the mesh, rounded to the precisions set below. "
+    "'My position' fills it from this computer's position; you can also copy it from an online map "
+    "(right-click on the place).",
+    "position.longitude": "Where the node is, east-west, in degrees (2.3522 for Paris; negative west "
+    "of Greenwich).",
+    "position.altitude": "The node's height above sea level, in metres. Optional: leave it unticked "
+    "if you do not know it.",
     "config.network.wifi_enabled": "Connects the node to a Wi-Fi network by itself, so it can reach "
     "the Internet without this computer. On most boards Wi-Fi turns Bluetooth off: the phone app "
     "can then no longer connect to the node over Bluetooth. USB keeps working.",
@@ -171,6 +181,14 @@ FIELDS: tuple[tuple[str, tuple[Field, ...]], ...] = (
             Field("config.lora.region", "Region", "enum", choices=_enum_names(config_pb2.Config.LoRaConfig.RegionCode.DESCRIPTOR)),
             Field("config.lora.ignore_mqtt", "Ignore packets from MQTT", "bool", "must be off for the app's MQTT proxy"),
             Field("config.lora.config_ok_to_mqtt", "Allow forwarding to MQTT", "bool"),
+        ),
+    ),
+    (
+        "Position",
+        (
+            Field("position.latitude", "Latitude", "float", "degrees, north positive", minimum=-90, maximum=90),
+            Field("position.longitude", "Longitude", "float", "degrees, east positive", minimum=-180, maximum=180),
+            Field("position.altitude", "Altitude", "int", "metres above sea level", minimum=-500, maximum=9000),
         ),
     ),
     (
@@ -303,7 +321,7 @@ class _Row:
             return self.widget.isChecked()  # type: ignore[attr-defined]
         if self.field.kind == "enum":
             return self.widget.currentText()  # type: ignore[attr-defined]
-        if self.field.kind == "int":
+        if self.field.kind in ("int", "float"):
             return self.widget.value()  # type: ignore[attr-defined]
         if self.field.kind == "timezone":
             return self.widget.rule()  # type: ignore[attr-defined]
@@ -319,6 +337,8 @@ class _Row:
             self.widget.setCurrentIndex(max(index, 0))  # type: ignore[attr-defined]
         elif self.field.kind == "int":
             self.widget.setValue(int(current) if current is not None else 0)  # type: ignore[attr-defined]
+        elif self.field.kind == "float":
+            self.widget.setValue(float(current) if current is not None else 0.0)  # type: ignore[attr-defined]
         elif self.field.kind == "timezone":
             self.widget.set_rule(None if current is None else str(current))  # type: ignore[attr-defined]
         else:
@@ -332,6 +352,7 @@ class ProfileForm(QWidget):
     changes the file does not have."""
 
     changed = Signal()
+    located = Signal(object)  # geolocate.Fix or the error text
 
     def __init__(self, path: Path, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -430,6 +451,8 @@ class ProfileForm(QWidget):
                 self.rows[field.path] = _Row(field, present, widget)
                 present.toggled.connect(self._touched)
                 self._watch(field, widget)
+            if group == "Position":
+                self._add_locate(grid, len(fields))
             column.addWidget(box)
         column.addStretch(1)
 
@@ -441,13 +464,54 @@ class ProfileForm(QWidget):
         bottom.addWidget(self.save_button)
         outer.addLayout(bottom)
 
+    def _add_locate(self, grid: QGridLayout, row: int) -> None:
+        """The "My position" button under the position fields, and a line
+        saying where the position came from and how precise it is."""
+        self.locate_button = QPushButton("My position")
+        self.locate_button.setToolTip(
+            "<p>Fills latitude and longitude with this computer's position: from the Wi-Fi "
+            "networks around (BeaconDB, tens of metres where they are mapped), else from your "
+            "Internet address (the town only). The networks' addresses are sent to that service. "
+            "Check the result, and correct it if the node is elsewhere.</p>"
+        )
+        self.locate_button.clicked.connect(self._locate)
+        self.locate_status = QLabel("")
+        self.locate_status.setWordWrap(True)
+        self.locate_status.setForegroundRole(QPalette.ColorRole.PlaceholderText)
+        grid.addWidget(self.locate_button, row, 1)
+        grid.addWidget(self.locate_status, row, 2, 1, 2)
+        self.located.connect(self._located)
+
+    def _locate(self) -> None:
+        self.locate_button.setEnabled(False)
+        self.locate_status.setText("Looking for this computer's position…")
+
+        def work() -> None:
+            try:
+                self.located.emit(geolocate.locate())
+            except ProvisionError as err:
+                self.located.emit(str(err))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _located(self, result: object) -> None:
+        self.locate_button.setEnabled(True)
+        if isinstance(result, str):
+            self.locate_status.setText(result)
+            return
+        for key, value in (("latitude", result.latitude), ("longitude", result.longitude)):  # type: ignore[union-attr]
+            row = self.rows[f"position.{key}"]
+            row.present.setChecked(True)
+            row.widget.setValue(value)  # type: ignore[attr-defined]
+        self.locate_status.setText(result.describe())  # type: ignore[union-attr]
+
     def _watch(self, field: Field, widget: QWidget) -> None:
         """Mark the form dirty on any edit of `widget`."""
         if field.kind == "bool":
             widget.toggled.connect(self._touched)  # type: ignore[attr-defined]
         elif field.kind == "enum":
             widget.currentIndexChanged.connect(self._touched)  # type: ignore[attr-defined]
-        elif field.kind == "int":
+        elif field.kind in ("int", "float"):
             widget.valueChanged.connect(self._touched)  # type: ignore[attr-defined]
         elif field.kind in ("secret", "ssid"):
             widget.edit.textChanged.connect(self._touched)  # type: ignore[attr-defined]
@@ -469,6 +533,13 @@ class ProfileForm(QWidget):
             spin.setRange(field.minimum, field.maximum)
             _no_wheel(spin)
             return spin
+        if field.kind == "float":
+            number = QDoubleSpinBox()
+            number.setDecimals(6)  # about 10 cm
+            number.setRange(field.minimum, field.maximum)
+            number.setSingleStep(0.0001)
+            _no_wheel(number)
+            return number
         if field.kind == "secret":
             return _SecretEdit()
         if field.kind == "timezone":
@@ -478,7 +549,6 @@ class ProfileForm(QWidget):
         if field.kind == "ssid":
             return _SsidEdit()
         edit = QLineEdit()
-        edit.setClearButtonEnabled(True)
         edit.setMinimumWidth(120)
         return edit
 
@@ -537,7 +607,6 @@ class _SsidEdit(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         self.edit = QLineEdit()
-        self.edit.setClearButtonEnabled(True)
         self.edit.setMinimumWidth(120)
         self.nearby = QToolButton()
         self.nearby.setText("Nearby")

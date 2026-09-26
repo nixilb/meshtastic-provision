@@ -71,7 +71,9 @@ REBOOT_GRACE_S = 8
 NODE_WAIT_S = 120
 
 # Sections of the profile the tools accept.
-PROFILE_KEYS = {"owner", "owner_short", "config", "module_config", "channels", "app"}
+PROFILE_KEYS = {"owner", "owner_short", "config", "module_config", "channels", "app", "position"}
+# The node's fixed position (`position` section): degrees and metres.
+POSITION_BOUNDS = {"latitude": (-90.0, 90.0), "longitude": (-180.0, 180.0), "altitude": (-500.0, 9000.0)}
 # meshtastic-desktop's settings a profile may set (`app` section): the
 # booleans of `~/.config/meshtastic/settings.json` that make the app use
 # the node and the broker (docs/node-setup.md, section 5).
@@ -739,9 +741,14 @@ class Profile:
     # meshtastic-desktop settings (see APP_SETTING_KEYS), applied to
     # settings.json after the node.
     app: dict[str, bool] = field(default_factory=dict)
+    # The node's fixed position: latitude and longitude in degrees (both or
+    # neither), altitude in metres.
+    position: dict[str, float] = field(default_factory=dict)
 
     def is_empty(self) -> bool:
-        return not (self.owner or self.owner_short or self.config or self.module_config or self.channels or self.app)
+        return not (
+            self.owner or self.owner_short or self.config or self.module_config or self.channels or self.app or self.position
+        )
 
 
 def load_profile(path: Path) -> Profile:
@@ -799,6 +806,19 @@ def load_profile(path: Path) -> Profile:
         if not isinstance(value, bool):
             raise ProvisionError(f"profile {path}: app.{key} must be true or false")
     profile.app = app
+    position = data.get("position") or {}
+    if not isinstance(position, dict):
+        raise ProvisionError(f"profile {path}: position must be a mapping")
+    unknown = set(position) - set(POSITION_BOUNDS)
+    if unknown:
+        raise ProvisionError(f"profile {path}: position: unknown keys {sorted(unknown)} (accepted: {sorted(POSITION_BOUNDS)})")
+    if position and not {"latitude", "longitude"} <= set(position):
+        raise ProvisionError(f"profile {path}: position needs both latitude and longitude")
+    for key, value in position.items():
+        low, high = POSITION_BOUNDS[key]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not low <= value <= high:
+            raise ProvisionError(f"profile {path}: position.{key} must be a number from {low:g} to {high:g}")
+    profile.position = {key: float(value) for key, value in position.items()}
     return profile
 
 
@@ -1115,6 +1135,31 @@ def compare(iface: Any, profile: Profile) -> list[Difference]:
     for entry in profile.channels:
         channel = _channel(node, entry["index"])
         diffs.extend(_channel_walk(channel, entry, apply=False))
+    diffs.extend(_position_diffs(iface, profile.position))
+    return diffs
+
+
+# Positions closer than this (degrees, about 1 m) are the same: the node
+# stores them as integers of 1e-7 degree.
+POSITION_TOLERANCE = 1e-5
+
+
+def _position_diffs(iface: Any, wanted: dict[str, float]) -> list[Difference]:
+    """The profile's fixed position against the node's: its own position
+    (from its node entry) and the fixed-position flag."""
+    if not wanted:
+        return []
+    info = iface.getMyNodeInfo() or {}
+    current = info.get("position") or {}
+    diffs = []
+    if not iface.localNode.localConfig.position.fixed_position:
+        diffs.append(Difference("position.fixed", "false", "true"))
+    for key in ("latitude", "longitude"):
+        have = current.get(key)
+        if have is None or abs(have - wanted[key]) > POSITION_TOLERANCE:
+            diffs.append(Difference(f"position.{key}", "unset" if have is None else f"{have:.6f}", f"{wanted[key]:.6f}"))
+    if "altitude" in wanted and round(current.get("altitude", 0)) != round(wanted["altitude"]):
+        diffs.append(Difference("position.altitude", str(current.get("altitude", "unset")), f"{wanted['altitude']:.0f}"))
     return diffs
 
 
@@ -1182,6 +1227,13 @@ def apply_profile(iface: Any, profile: Profile, progress: Progress) -> list[Diff
             progress.log(f"writing channel {entry['index']}: " + ", ".join(str(d) for d in changed))
             node.writeChannel(entry["index"])
             time.sleep(0.5)
+    position = _position_diffs(iface, profile.position)
+    if position:
+        wanted = profile.position
+        progress.log(f"setting the fixed position: " + ", ".join(str(d) for d in position))
+        # Floats: the library reads integers as 1e-7 degree units.
+        node.setFixedPosition(float(wanted["latitude"]), float(wanted["longitude"]), int(round(wanted.get("altitude", 0))))
+        time.sleep(0.5)
     progress.log("committing: the node saves and reboots if a change needs it")
     node.commitSettingsTransaction()
     time.sleep(1)

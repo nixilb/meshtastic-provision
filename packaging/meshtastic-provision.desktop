@@ -1,0 +1,11 @@
+# Menu entry of the packaged window (installed by the .deb under
+# /usr/share/applications).
+[Desktop Entry]
+Type=Application
+Name=Meshtastic node provisioning
+Comment=Flash a Meshtastic node over USB and apply its settings
+Exec=/opt/meshtastic-provision/meshtastic-provision
+Icon=meshtastic-provision
+Terminal=false
+Categories=Utility;HardwareSettings;
+Keywords=meshtastic;lora;flash;

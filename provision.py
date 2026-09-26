@@ -85,6 +85,15 @@ class ProvisionError(Exception):
     """A step failed; the message is meant for the user."""
 
 
+def resource_path(name: str) -> Path:
+    """A file shipped next to the code: beside the sources when run with
+    `uv run`, in the bundle's directory when frozen by PyInstaller."""
+    import sys
+
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    return base / name
+
+
 # ---------------------------------------------------------------------------
 # Progress reporting
 # ---------------------------------------------------------------------------

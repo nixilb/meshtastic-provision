@@ -170,6 +170,29 @@ saves and reboots once, at the commit. The tool then reconnects and
 compares again; the result is "the node matches the profile" or the list
 of remaining differences.
 
+## Linux package
+
+For people who should not need a terminal: a Debian package that installs
+the window under `/opt/meshtastic-provision` with a menu entry ("Meshtastic
+node provisioning") and an icon. It is built with PyInstaller on a machine
+of the target architecture (x86_64 here, aarch64 on a Raspberry Pi), with
+`dpkg-deb` and `fakeroot` installed:
+
+```sh
+packaging/build-linux.sh          # -> dist/meshtastic-provision_<version>_<arch>.deb
+```
+
+The user installs it by double-clicking the file (the software centre) or
+with `sudo apt install ./meshtastic-provision_<version>_<arch>.deb`, then
+opens it from the menu. Plugging a node in is enough: the window detects
+it, and when the user is not allowed to open the serial port it offers to
+join the port's group through the system's password prompt and restarts
+itself with the group active. Nothing else to type.
+
+The package holds Python, Qt and the libraries (about 200 MB installed,
+66 MB to download). `packaging/` has the PyInstaller spec, the menu entry
+and the icon.
+
 ## Files
 
 | Path | Role |
@@ -183,7 +206,8 @@ of remaining differences.
 | `~/.config/meshtastic/node-profile.yaml` | The settings: saved by the window, default profile of the command line |
 | `~/.config/meshtastic/backups/` | Settings exported before a flash (window) |
 | `~/.cache/meshtastic-provision/` | Downloaded firmware images |
-| `.venv/` | uv's environment (not tracked) |
+| `packaging/` | PyInstaller spec, menu entry, icon and the `.deb` build script |
+| `.venv/`, `build/`, `dist/` | uv's environment and the build outputs (not tracked) |
 
 Backups are the meshtastic CLI's `--export-config` YAML, which
 `uvx meshtastic --port /dev/ttyUSB0 --configure <file>` restores.

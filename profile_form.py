@@ -39,7 +39,7 @@ import provision
 from provision import ProvisionError
 
 # The example profile, the source of a new file's defaults.
-EXAMPLE_PROFILE = Path(__file__).with_name("node-profile.example.yaml")
+EXAMPLE_PROFILE = provision.resource_path("node-profile.example.yaml")
 
 
 @dataclass(frozen=True)

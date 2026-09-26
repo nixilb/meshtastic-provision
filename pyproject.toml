@@ -16,3 +16,8 @@ dependencies = [
     "pyserial>=3.5",
     "PySide6-Essentials>=6.8",
 ]
+
+[dependency-groups]
+build = [
+    "pyinstaller>=6.11",
+]

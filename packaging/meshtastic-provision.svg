@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Application icon: a radio node (antenna and waves) on a green disc. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <circle cx="64" cy="64" r="60" fill="#2e7d32"/>
+  <rect x="60" y="52" width="8" height="44" rx="3" fill="#ffffff"/>
+  <circle cx="64" cy="48" r="9" fill="#ffffff"/>
+  <path d="M40 40a34 34 0 0 1 48 0" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>
+  <path d="M28 28a50 50 0 0 1 72 0" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round" opacity="0.7"/>
+</svg>

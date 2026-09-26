@@ -1,7 +1,7 @@
 """Core of meshtastic-provision: flash a Meshtastic node over USB and apply
 a settings profile, with no user interface of its own.
 
-The command line (`provision_cli.py`) and the Tkinter window
+The command line (`provision_cli.py`) and the Qt window
 (`provision_gui.py`) both drive [`run`] and receive its progress through a
 [`Progress`] object, so every step lives here once.
 

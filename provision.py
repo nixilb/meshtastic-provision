@@ -161,23 +161,99 @@ def port_holders(port: str) -> list[tuple[int, str]]:
     return holders
 
 
+class PortAccessError(ProvisionError):
+    """The user may not open the port: not in its group, or the group was
+    granted but is not active in this session yet (no new login since)."""
+
+    def __init__(self, port: str, group: str, granted: bool) -> None:
+        self.port = port
+        self.group = group
+        self.granted = granted
+        if granted:
+            text = (
+                f"{port} belongs to the group {group}, which was given to you but is not active "
+                f"in this session yet: log out and back in, or restart this tool with `sg {group} -c ...`"
+            )
+        else:
+            text = (
+                f"{port} belongs to the group {group}, which you are not in: run "
+                f"`sudo usermod -aG {group} $USER`, then log out and back in"
+            )
+        super().__init__(text)
+
+
+def port_group(port: str) -> str:
+    """The group owning the serial device (`dialout` on Debian and
+    Raspberry Pi OS, `uucp` on Arch)."""
+    import grp
+
+    try:
+        return grp.getgrgid(os.stat(port).st_gid).gr_name
+    except (OSError, KeyError):
+        return "dialout"
+
+
+def user_in_group(group: str) -> bool:
+    """Whether the user was given `group` (in the system's group file),
+    active in this session or not."""
+    import grp
+    import pwd
+
+    user = pwd.getpwuid(os.getuid())
+    try:
+        entry = grp.getgrnam(group)
+    except KeyError:
+        return False
+    return user.pw_name in entry.gr_mem or user.pw_gid == entry.gr_gid
+
+
+def check_port_access(port: str) -> None:
+    """Raise [`PortAccessError`] when `port` cannot be opened."""
+    if os.access(port, os.R_OK | os.W_OK):
+        return
+    group = port_group(port)
+    raise PortAccessError(port, group, granted=user_in_group(group))
+
+
+def add_user_to_group(group: str, graphical: bool) -> None:
+    """`usermod -aG group user` with administrator rights: through the
+    desktop's password prompt (`pkexec`) or `sudo` on the terminal."""
+    import pwd
+    import shutil
+    import subprocess
+
+    user = pwd.getpwuid(os.getuid()).pw_name
+    elevate = "pkexec" if graphical else "sudo"
+    if shutil.which(elevate) is None:
+        raise ProvisionError(f"{elevate} is not installed: run `sudo usermod -aG {group} {user}` yourself")
+    result = subprocess.run([elevate, "usermod", "-aG", group, user], capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip() or f"exit code {result.returncode}"
+        raise ProvisionError(f"could not add {user} to {group}: {detail}")
+
+
+def relaunch_with_group(group: str) -> None:
+    """Replace this process by the same command run with `group` active
+    (`sg`), so a group granted during the session applies without a new
+    login. Never returns on success."""
+    import shlex
+    import shutil
+    import sys
+
+    if shutil.which("sg") is None:
+        raise ProvisionError(f"`sg` is not installed: log out and back in for the group {group} to apply")
+    command = shlex.join([sys.executable, *sys.argv])
+    os.execvp("sg", ["sg", group, "-c", command])
+
+
 def ensure_port_free(port: str) -> None:
-    """Refuse to go on while `port` cannot be opened (the user is not in
-    its group) or another process holds it: the app, the meshtastic CLI or
-    a serial monitor would break the flash or the configuration."""
+    """Refuse to go on while `port` cannot be opened (see
+    [`check_port_access`]) or another process holds it: the app, the
+    meshtastic CLI or a serial monitor would break the flash or the
+    configuration."""
     if not os.path.exists(port):
         raise ProvisionError(f"{port} does not exist: is the node plugged in?")
-    if not os.access(port, os.R_OK | os.W_OK):
-        import grp
-
-        try:
-            group = grp.getgrgid(os.stat(port).st_gid).gr_name
-        except KeyError:
-            group = "dialout"
-        raise ProvisionError(
-            f"no permission to open {port}: add yourself to the group {group} "
-            f"(sudo usermod -aG {group} $USER), then log out and back in"
-        )
+    check_port_access(port)
     holders = port_holders(port)
     if holders:
         names = ", ".join(f"{name} (pid {pid})" for pid, name in holders)

@@ -12,6 +12,7 @@ still differ or a step failed, 2 for a usage error.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -62,6 +63,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if not args.port:
             parser.error("--port is required")
+        _ensure_access(args.port, assume_yes=args.yes)
         if args.detect:
             provision.probe_node(args.port, progress)
             provision.detect_chip(args.port, progress)
@@ -93,6 +95,26 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         print("interrupted", file=sys.stderr)
         return 1
+
+
+def _ensure_access(port: str, assume_yes: bool) -> None:
+    """The port must be openable. A group granted but not active yet is
+    applied by restarting under it; a missing one is offered (`sudo`)."""
+    if not os.path.exists(port):
+        return  # reported later, with the plug-in hint
+    try:
+        provision.check_port_access(port)
+    except provision.PortAccessError as err:
+        if not err.granted:
+            print(f"{port} belongs to the group {err.group}, which your user is not in.")
+            if not assume_yes:
+                answer = input(f"Add you to {err.group} now with sudo? Type 'yes' to continue: ")
+                if answer.strip().lower() != "yes":
+                    raise
+            provision.add_user_to_group(err.group, graphical=False)
+            print(f"you are now in the group {err.group}")
+        print(f"restarting with the group {err.group} active", flush=True)
+        provision.relaunch_with_group(err.group)  # replaces this process
 
 
 def _ask(summary: str) -> bool:

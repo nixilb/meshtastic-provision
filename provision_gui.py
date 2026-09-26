@@ -90,7 +90,7 @@ class Window(QMainWindow):
         self._watch.timeout.connect(self._watch_ports)
         self._watch.start(1000)
         if self._known_ports:
-            QTimer.singleShot(500, self._detect)
+            QTimer.singleShot(500, lambda: self._port_present(self.port.currentData(), delay_ms=0))
 
     # -- layout ---------------------------------------------------------
 
@@ -309,10 +309,58 @@ class Window(QMainWindow):
                 self.chip_label.setText("not read yet")
                 self.node_label.setText("not asked yet (plug the node in, or press Detect)")
         for device in sorted(added):
-            self._append(f"{device} plugged in: detecting in 5 s")
+            self._append(f"{device} plugged in")
             self.port.setCurrentIndex(self.port.findData(device))
             # Give the node time to boot before asking it who it is.
-            QTimer.singleShot(5000, self._detect)
+            self._port_present(device, delay_ms=5000)
+
+    def _port_present(self, device: str | None, delay_ms: int) -> None:
+        """A port is there: make sure it can be opened, then detect."""
+        if not device or not self._ensure_access(device):
+            return
+        self._append(f"detecting {device}" + (f" in {delay_ms // 1000} s" if delay_ms else ""))
+        QTimer.singleShot(delay_ms, self._detect)
+
+    def _ensure_access(self, device: str) -> bool:
+        """The port must be openable. A user outside its group is offered
+        to join it (the system asks for the password); a group granted
+        but not active yet is applied by restarting the tool under it."""
+        try:
+            provision.check_port_access(device)
+            return True
+        except provision.PortAccessError as err:
+            if not err.granted:
+                answer = QMessageBox.question(
+                    self,
+                    "Serial port access",
+                    f"{device} belongs to the group {err.group}, which your user is not in, so the node "
+                    f"cannot be reached.\n\nAdd you to that group now? The system asks for your password, "
+                    "then this tool restarts with the group active; no need to log out.",
+                )
+                if answer != QMessageBox.StandardButton.Yes:
+                    self._append(f"error: {err}", "error")
+                    return False
+                try:
+                    provision.add_user_to_group(err.group, graphical=True)
+                except ProvisionError as failure:
+                    QMessageBox.warning(self, "Serial port access", str(failure))
+                    return False
+                self._append(f"you are now in the group {err.group}")
+            self._append(f"restarting with the group {err.group} active")
+            self._restart_with_group(err.group)
+            return False
+
+    def _restart_with_group(self, group: str) -> None:
+        try:
+            self.form.save()
+        except ProvisionError as err:
+            self._append(f"settings not saved: {err}", "error")
+        self._watch.stop()
+        try:
+            provision.relaunch_with_group(group)  # replaces this process
+        except (ProvisionError, OSError) as err:
+            QMessageBox.warning(self, "Serial port access", f"{err}")
+            self._watch.start(1000)
 
     def _selected_port(self) -> str:
         device = self.port.currentData()

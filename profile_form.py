@@ -21,8 +21,8 @@ from typing import Any
 
 import yaml
 from meshtastic.protobuf import channel_pb2, config_pb2
-from PySide6.QtCore import QEvent, QObject, Qt, Signal
-from PySide6.QtGui import QPalette
+from PySide6.QtCore import QEvent, QObject, Qt, QUrl, Signal
+from PySide6.QtGui import QDesktopServices, QPalette
 from PySide6.QtWidgets import (
     QAbstractScrollArea,
     QApplication,
@@ -475,12 +475,24 @@ class ProfileForm(QWidget):
             "Check the result, and correct it if the node is elsewhere.</p>"
         )
         self.locate_button.clicked.connect(self._locate)
+        self.map_button = QPushButton("Check on Google Maps")
+        self.map_button.setToolTip("Opens Google Maps in the browser at the latitude and longitude above.")
+        self.map_button.clicked.connect(self._open_map)
         self.locate_status = QLabel("")
         self.locate_status.setWordWrap(True)
         self.locate_status.setForegroundRole(QPalette.ColorRole.PlaceholderText)
-        grid.addWidget(self.locate_button, row, 1)
-        grid.addWidget(self.locate_status, row, 2, 1, 2)
+        buttons = QHBoxLayout()
+        buttons.addWidget(self.locate_button)
+        buttons.addWidget(self.map_button)
+        buttons.addStretch(1)
+        grid.addLayout(buttons, row, 1, 1, 3)
+        grid.addWidget(self.locate_status, row + 1, 1, 1, 3)
         self.located.connect(self._located)
+
+    def _open_map(self) -> None:
+        latitude = self.rows["position.latitude"].widget.value()  # type: ignore[attr-defined]
+        longitude = self.rows["position.longitude"].widget.value()  # type: ignore[attr-defined]
+        QDesktopServices.openUrl(QUrl(f"https://www.google.com/maps/search/?api=1&query={latitude:.6f},{longitude:.6f}"))
 
     def _locate(self) -> None:
         self.locate_button.setEnabled(False)

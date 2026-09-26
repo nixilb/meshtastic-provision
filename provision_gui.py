@@ -115,10 +115,10 @@ class Window(QMainWindow):
         self.chip_label = QLabel("not read yet")
         form.addRow("Chip", self.chip_label)
         self.board = QComboBox()
-        self.board.addItem("loading...", None)
+        self.board.setPlaceholderText("loading the board list...")
         form.addRow("Board", self.board)
         self.version = QComboBox()
-        self.version.addItem("loading...", None)
+        self.version.setPlaceholderText("loading the versions...")
         form.addRow("Version", self.version)
         self.backup = QCheckBox("Back up the node's current settings before erasing (needs a working node)")
         self.backup.setChecked(True)
@@ -231,8 +231,12 @@ class Window(QMainWindow):
         self.boards, versions = payload  # type: ignore[misc]
         self._fill_boards()
         self.version.clear()
+        self.version.setPlaceholderText("choose a version")
         for release in versions:
             self.version.addItem(str(release), release.version)
+        # The newest stable release, not the newest alpha, is the default.
+        stable = next((i for i, r in enumerate(versions) if not r.prerelease), -1)
+        self.version.setCurrentIndex(stable)
 
     def _set_node(self, identity: object) -> None:
         self.identity = identity  # type: ignore[assignment]
@@ -245,18 +249,18 @@ class Window(QMainWindow):
         self._fill_boards()
 
     def _fill_boards(self) -> None:
-        """The board list, reduced to the detected chip's family, with the
-        board the node reported preselected."""
+        """The board list, reduced to the detected chip's family. Nothing is
+        selected until the node reports its board or the user chooses one:
+        a preselected board would look like a detection."""
         boards = self.boards
         if self.chip:
             boards = [b for b in boards if b.mcu == self.chip.chip]
         self.board.clear()
+        self.board.setPlaceholderText("press Detect, or choose the board by hand")
         for board in boards:
             self.board.addItem(str(board), board.platformio_target)
         wanted = self.identity.pio_env if self.identity else ""
-        index = next((i for i, b in enumerate(boards) if b.platformio_target == wanted), 0)
-        if boards:
-            self.board.setCurrentIndex(index)
+        self.board.setCurrentIndex(next((i for i, b in enumerate(boards) if b.platformio_target == wanted), -1))
 
     def _ask(self, summary: str) -> None:
         """The erase confirmation, on the GUI thread; the worker waits."""

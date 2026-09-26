@@ -325,11 +325,29 @@ class Window(QMainWindow):
             self._port_present(device, delay_ms=5000)
 
     def _port_present(self, device: str | None, delay_ms: int) -> None:
-        """A port is there: make sure it can be opened, then detect."""
-        if not device or not self._ensure_access(device):
+        """A port is there: once the node had time to boot, make sure it
+        can be opened, then detect."""
+        if not device:
             return
         self._append(f"detecting {device}" + (f" in {delay_ms // 1000} s" if delay_ms else ""))
-        QTimer.singleShot(delay_ms, self._detect)
+        QTimer.singleShot(delay_ms, lambda: self._access_then_detect(device, tries=6))
+
+    def _access_then_detect(self, device: str, tries: int) -> None:
+        # 2026-09-26: the port shows up before udev has given the user its
+        # ACL (uaccess), a moment later; checking at once asked for a
+        # permission the user already had. Retry for a few seconds before
+        # concluding it is missing.
+        if device != self.port.currentData():
+            return  # unplugged or another port chosen meanwhile
+        try:
+            provision.check_port_access(device)
+        except provision.PortAccessError:
+            if tries > 0:
+                QTimer.singleShot(500, lambda: self._access_then_detect(device, tries - 1))
+                return
+            if not self._ensure_access(device):
+                return
+        self._detect()
 
     def _ensure_access(self, device: str) -> bool:
         """The port must be openable. When it is not, a udev rule granting

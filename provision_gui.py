@@ -513,14 +513,20 @@ class Window(QMainWindow):
         self._start(work)
 
     def _save_settings(self) -> bool:
-        """Write the form before an action; on an invalid entry, say which
-        and do nothing."""
-        try:
-            self.form.save()
-        except ProvisionError as err:
-            QMessageBox.warning(self, "Settings", str(err))
-            return False
-        return True
+        """Before an action: the action reads the saved settings, so unsaved
+        changes are offered to be saved first (nothing is saved without the
+        user's say). Returns whether to go on."""
+        if not self.form.dirty:
+            return True
+        answer = QMessageBox.question(
+            self,
+            "Unsaved settings",
+            "The settings on the right have changes that are not saved. The node gets the saved "
+            "settings.\n\nSave the changes first?",
+            QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Save,
+        )
+        return answer == QMessageBox.StandardButton.Save and self.form.save_clicked()
 
     def _confirm(self, summary: str) -> bool:
         """Called on the worker: ask on the GUI thread, wait for the answer."""
@@ -570,12 +576,18 @@ class Window(QMainWindow):
         self._start(work)
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt naming
-        """Keep the settings on close; an invalid entry asks before losing it."""
-        try:
-            self.form.save()
-        except ProvisionError as err:
-            answer = QMessageBox.question(self, "Settings", f"{err}\n\nClose anyway and lose the change?")
-            if answer != QMessageBox.StandardButton.Yes:
+        """Unsaved settings: save, discard or stay."""
+        if self.form.dirty:
+            answer = QMessageBox.question(
+                self,
+                "Unsaved settings",
+                "The settings have changes that are not saved.",
+                QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Save,
+            )
+            if answer == QMessageBox.StandardButton.Cancel or (
+                answer == QMessageBox.StandardButton.Save and not self.form.save_clicked()
+            ):
                 event.ignore()
                 return
         event.accept()

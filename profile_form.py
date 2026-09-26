@@ -20,7 +20,7 @@ from typing import Any
 
 import yaml
 from meshtastic.protobuf import channel_pb2, config_pb2
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -30,6 +30,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
+    QPushButton,
     QScrollArea,
     QSpinBox,
     QToolButton,
@@ -310,13 +312,19 @@ class _Row:
 
 class ProfileForm(QWidget):
     """The form, embedded in the window. `load` fills it from the file (or
-    the example for a new one), `save` validates and writes it."""
+    the example for a new one); the Save button validates and writes it.
+    Nothing is saved by itself: `dirty` tells whether the form holds
+    changes the file does not have."""
+
+    changed = Signal()
 
     def __init__(self, path: Path, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.path = path
         self.data: dict[str, Any] = {}
         self.rows: dict[str, _Row] = {}
+        self.dirty = False
+        self._loading = False
         self._build()
         self.load()
 
@@ -334,8 +342,36 @@ class ProfileForm(QWidget):
             for path in ("config.network.wifi_ssid", "config.network.wifi_psk"):
                 _unset(data, path)
         self.data = data
-        for row in self.rows.values():
-            row.set(_get(data, row.field.path))
+        self._loading = True
+        try:
+            for row in self.rows.values():
+                row.set(_get(data, row.field.path))
+        finally:
+            self._loading = False
+        self._set_dirty(not self.path.is_file())  # a new file is not saved yet
+
+    def _touched(self) -> None:
+        if not self._loading:
+            self._set_dirty(True)
+
+    def _set_dirty(self, dirty: bool) -> None:
+        self.dirty = dirty
+        self.save_button.setEnabled(dirty)
+        self.status.setText("Unsaved changes" if dirty else "Saved")
+        self.status.setForegroundRole(
+            QPalette.ColorRole.WindowText if dirty else QPalette.ColorRole.PlaceholderText
+        )
+        self.changed.emit()
+
+    def save_clicked(self) -> bool:
+        """The Save button: validate and write; an invalid entry is named
+        and nothing is written. Returns whether it saved."""
+        try:
+            self.save()
+        except ProvisionError as err:
+            QMessageBox.warning(self, "Settings", str(err))
+            return False
+        return True
 
     def _build(self) -> None:
         outer = QVBoxLayout(self)
@@ -377,8 +413,31 @@ class ProfileForm(QWidget):
                     hint.setForegroundRole(QPalette.ColorRole.PlaceholderText)
                     grid.addWidget(hint, r, 3)
                 self.rows[field.path] = _Row(field, present, widget)
+                present.toggled.connect(self._touched)
+                self._watch(field, widget)
             column.addWidget(box)
         column.addStretch(1)
+
+        bottom = QHBoxLayout()
+        self.status = QLabel("")
+        bottom.addWidget(self.status, 1)
+        self.save_button = QPushButton("Save")
+        self.save_button.clicked.connect(self.save_clicked)
+        bottom.addWidget(self.save_button)
+        outer.addLayout(bottom)
+
+    def _watch(self, field: Field, widget: QWidget) -> None:
+        """Mark the form dirty on any edit of `widget`."""
+        if field.kind == "bool":
+            widget.toggled.connect(self._touched)  # type: ignore[attr-defined]
+        elif field.kind == "enum":
+            widget.currentIndexChanged.connect(self._touched)  # type: ignore[attr-defined]
+        elif field.kind == "int":
+            widget.valueChanged.connect(self._touched)  # type: ignore[attr-defined]
+        elif field.kind == "secret":
+            widget.edit.textChanged.connect(self._touched)  # type: ignore[attr-defined]
+        else:
+            widget.textChanged.connect(self._touched)  # type: ignore[attr-defined]
 
     def _widget(self, field: Field) -> QWidget:
         if field.kind == "bool":
@@ -436,6 +495,7 @@ class ProfileForm(QWidget):
         except OSError as err:
             raise ProvisionError(f"cannot save the settings: {err}") from err
         self.data = data
+        self._set_dirty(False)
         return self.path
 
 

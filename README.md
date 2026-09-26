@@ -67,7 +67,13 @@ and saved to `~/.config/meshtastic/node-profile.yaml` before each action
 and when the window closes; that file is the command line's default
 profile, so both tools share the same settings.
 
-The log pane shows every step; errors are in red.
+During an action the window shows its stages (Download, Erase, Write,
+Restart, Settings, Check for a flash), each ticked when done or crossed
+when it failed, an animated bar during waits of unknown length, a warning
+not to unplug the node while its flash is erased and written, and the
+outcome in one line. Everything that can be edited is greyed meanwhile.
+The technical log is folded under "Details"; it is also kept in
+`~/.local/state/meshtastic-provision/provision.log`.
 
 ### Command line
 

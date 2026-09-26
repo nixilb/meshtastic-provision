@@ -19,7 +19,7 @@ import time
 from typing import Callable
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QFontDatabase, QTextCharFormat, QTextCursor
+from PySide6.QtGui import QColor, QFont, QFontDatabase, QPalette, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import (
     QStackedWidget,
     QApplication,
@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QSplitter,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -59,6 +60,7 @@ class Events(QObject):
     node = Signal(object)
     chip = Signal(object)
     ask = Signal(str)
+    step = Signal(str)
 
 
 class Window(QMainWindow):
@@ -168,18 +170,52 @@ class Window(QMainWindow):
         form.addRow(buttons)
         column.addWidget(self.device_box)
 
+        # The run: its stages, a warning while the flash is written, the
+        # progress bar and the outcome. Hidden until an action runs.
+        self.steps_row = QHBoxLayout()
+        self.step_labels: dict[str, QLabel] = {}
+        column.addLayout(self.steps_row)
+        self.banner = QLabel("Do not unplug the node: its firmware is being written.")
+        banner_font = self.banner.font()
+        banner_font.setBold(True)
+        self.banner.setFont(banner_font)
+        self.banner.setVisible(False)
+        column.addWidget(self.banner)
         self.bar = QProgressBar()
         self.bar.setRange(0, 1000)
         self.bar.setTextVisible(False)
+        self.bar.setVisible(False)
         column.addWidget(self.bar)
         self.bar_label = QLabel("")
         column.addWidget(self.bar_label)
+        self.result_label = QLabel("")
+        self.result_label.setWordWrap(True)
+        result_font = self.result_label.font()
+        result_font.setPointSizeF(result_font.pointSizeF() * 1.15)
+        result_font.setBold(True)
+        self.result_label.setFont(result_font)
+        column.addWidget(self.result_label)
+        self.run_steps: tuple[str, ...] = ()
+        self.current_step: str | None = None
 
+        # The technical log, folded by default.
+        self.details = QToolButton()
+        self.details.setText("Details")
+        self.details.setCheckable(True)
+        self.details.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.details.setArrowType(Qt.ArrowType.RightArrow)
+        self.details.setAutoRaise(True)
+        self.details.toggled.connect(self._show_details)
+        column.addWidget(self.details)
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
         self.log.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
         self.log.setMaximumBlockCount(5000)
+        self.log.setVisible(False)
         column.addWidget(self.log, 1)
+        # Keeps everything at the top while the log is folded.
+        self.left_column = column
+        column.addStretch(1)
         splitter.addWidget(left)
 
         right = QGroupBox("Settings")
@@ -205,6 +241,9 @@ class Window(QMainWindow):
         self.events.node.connect(self._set_node)
         self.events.chip.connect(self._set_chip)
         self.events.ask.connect(self._ask)
+        self.events.step.connect(self._enter_step)
+        self.events.error.connect(self._run_failed)
+        self.events.ok.connect(self._run_succeeded)
 
     # -- background work --------------------------------------------------
 
@@ -234,7 +273,114 @@ class Window(QMainWindow):
                 self.events.idle.emit()
 
     def _progress(self) -> Progress:
-        return Progress(log=self.events.log.emit, bar=self.events.bar.emit)
+        return Progress(log=self.events.log.emit, bar=self.events.bar.emit, step=self.events.step.emit)
+
+    # -- the run's stages ---------------------------------------------------
+
+    STEP_NAMES = {
+        provision.STEP_DOWNLOAD: "Download",
+        provision.STEP_ERASE: "Erase",
+        provision.STEP_WRITE: "Write",
+        provision.STEP_RESTART: "Restart",
+        provision.STEP_SETTINGS: "Settings",
+        provision.STEP_VERIFY: "Check",
+    }
+
+    def _begin_run(self, steps: tuple[str, ...]) -> None:
+        """Lay out the stages of the run about to start, all pending."""
+        while self.steps_row.count():
+            item = self.steps_row.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self.step_labels = {}
+        for index, name in enumerate(steps):
+            if index:
+                arrow = QLabel("›")
+                arrow.setForegroundRole(QPalette.ColorRole.PlaceholderText)
+                self.steps_row.addWidget(arrow)
+            label = QLabel()
+            self.step_labels[name] = label
+            self.steps_row.addWidget(label)
+        if steps:
+            self.steps_row.addStretch(1)
+        self.run_steps = steps
+        self.current_step = None
+        self.result_label.setText("")
+        for name in steps:
+            self._paint_step(name, "pending")
+
+    def _clear_run(self) -> None:
+        """Forget the last run's stages and outcome (a new node)."""
+        self._begin_run(())
+        self.bar.setVisible(False)
+        self.bar_label.setText("")
+
+    def _paint_step(self, name: str, state: str) -> None:
+        label = self.step_labels.get(name)
+        if label is None:
+            return
+        mark = {"pending": "○", "active": "▶", "done": "✓", "failed": "✗"}[state]
+        label.setText(f"{mark} {self.STEP_NAMES[name]}")
+        font = label.font()
+        font.setBold(state in ("active", "failed"))
+        label.setFont(font)
+        colour = {"done": "#43a047", "failed": "#e53935"}.get(state)
+        palette = label.palette()
+        if colour:
+            palette.setColor(QPalette.ColorRole.WindowText, QColor(colour))
+            label.setPalette(palette)
+        else:
+            label.setPalette(QApplication.palette())
+            label.setForegroundRole(
+                QPalette.ColorRole.PlaceholderText if state == "pending" else QPalette.ColorRole.WindowText
+            )
+
+    def _enter_step(self, name: str) -> None:
+        if name not in self.step_labels:
+            return
+        for earlier in self.run_steps[: self.run_steps.index(name)]:
+            self._paint_step(earlier, "done")
+        self._paint_step(name, "active")
+        self.current_step = name
+        # Unplugging while the flash is erased or written leaves the board
+        # without firmware (a new flash recovers it).
+        self.banner.setVisible(name in (provision.STEP_ERASE, provision.STEP_WRITE))
+        self._paint_banner()
+
+    def _paint_banner(self) -> None:
+        palette = self.banner.palette()
+        palette.setColor(QPalette.ColorRole.Window, QColor("#b26a00"))
+        palette.setColor(QPalette.ColorRole.WindowText, QColor("#ffffff"))
+        self.banner.setPalette(palette)
+        self.banner.setAutoFillBackground(True)
+        self.banner.setContentsMargins(8, 6, 8, 6)
+
+    def _run_failed(self, text: str) -> None:
+        if not self.run_steps:
+            return  # an error outside a run (detection): the log has it
+        if self.current_step:
+            self._paint_step(self.current_step, "failed")
+        self.banner.setVisible(False)
+        self._set_result(text, "#e53935")
+
+    def _run_succeeded(self, text: str) -> None:
+        if not self.run_steps:
+            return
+        for name in self.run_steps:
+            self._paint_step(name, "done")
+        self.banner.setVisible(False)
+        self._set_result(text, "#43a047")
+
+    def _set_result(self, text: str, colour: str) -> None:
+        palette = self.result_label.palette()
+        palette.setColor(QPalette.ColorRole.WindowText, QColor(colour))
+        self.result_label.setPalette(palette)
+        self.result_label.setText(text[:1].upper() + text[1:])
+
+    def _show_details(self, shown: bool) -> None:
+        self.details.setArrowType(Qt.ArrowType.DownArrow if shown else Qt.ArrowType.RightArrow)
+        self.log.setVisible(shown)
+        self.left_column.setStretch(self.left_column.count() - 1, 0 if shown else 1)
 
     # -- slots ------------------------------------------------------------
 
@@ -261,11 +407,25 @@ class Window(QMainWindow):
                 self.log.appendPlainText(f"cannot write {provision.LOG_PATH}: {err}")
 
     def _set_bar(self, done: int, total: int, label: str) -> None:
-        self.bar.setValue(0 if total <= 0 else min(1000, done * 1000 // total))
-        self.bar_label.setText(label if total > 0 else "")
+        """A position (total > 0), a wait of unknown length (total < 0,
+        animated), or nothing (total 0)."""
+        if total < 0:
+            self.bar.setRange(0, 0)
+        else:
+            self.bar.setRange(0, 1000)
+            self.bar.setValue(0 if total == 0 else min(1000, done * 1000 // total))
+        self.bar.setVisible(total != 0)
+        self.bar_label.setText(label if total != 0 else "")
 
     def _set_busy(self, busy: bool) -> None:
+        """While a step runs, the buttons hide and what could be edited is
+        greyed: changing it would not affect the run."""
         self.busy = busy
+        for widget in (self.form, self.port, self.board, self.version, self.backup):
+            widget.setEnabled(not busy)
+        if not busy:
+            self.banner.setVisible(False)
+            self.run_steps = ()  # the strip stays shown; later errors are not the run's
         self._update_buttons()
 
     def _update_rows(self) -> None:
@@ -393,6 +553,8 @@ class Window(QMainWindow):
         for device in sorted(removed):
             self._append(f"{device} unplugged")
             if device == self.port.currentData() or self.port.count() == 0:
+                if not getattr(self, "busy", False):
+                    self._clear_run()
                 self.identity = None
                 self.chip = None
                 self.node_label.setText("")
@@ -560,10 +722,11 @@ class Window(QMainWindow):
             )
             result = provision.run(params, self._progress())
             if result.ok:
-                self.events.ok.emit("done: the node is ready")
+                self.events.ok.emit("the node is ready")
             else:
-                self.events.error.emit("done, with settings still differing")
+                self.events.error.emit("the firmware is installed but some settings differ: see Details")
 
+        self._begin_run(provision.FLASH_STEPS)
         self._start(work)
 
     def _configure(self, check: bool) -> None:
@@ -573,13 +736,12 @@ class Window(QMainWindow):
         def work() -> None:
             params = RunParams(port=self._selected_port(), profile=provision.DEFAULT_PROFILE, check_only=check)
             result = provision.run(params, self._progress())
-            if check:
-                (self.events.ok if result.ok else self.events.log).emit("check finished")
-            elif result.ok:
-                self.events.ok.emit("configuration finished")
+            if result.ok:
+                self.events.ok.emit("the node matches the settings" if check else "the node is configured")
             else:
-                self.events.error.emit("settings still differ")
+                self.events.error.emit(f"{len(result.remaining)} setting(s) differ from the saved ones: see Details")
 
+        self._begin_run(provision.CHECK_STEPS if check else provision.CONFIGURE_STEPS)
         self._start(work)
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt naming

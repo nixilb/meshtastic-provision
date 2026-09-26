@@ -102,26 +102,50 @@ def resource_path(name: str) -> Path:
 # ---------------------------------------------------------------------------
 
 
+# The stages of a run, announced through Progress.step in this order (a
+# run without a flash starts at STEP_SETTINGS; a check only verifies).
+STEP_DOWNLOAD = "download"
+STEP_ERASE = "erase"
+STEP_WRITE = "write"
+STEP_RESTART = "restart"
+STEP_SETTINGS = "settings"
+STEP_VERIFY = "verify"
+FLASH_STEPS = (STEP_DOWNLOAD, STEP_ERASE, STEP_WRITE, STEP_RESTART, STEP_SETTINGS, STEP_VERIFY)
+CONFIGURE_STEPS = (STEP_SETTINGS, STEP_VERIFY)
+CHECK_STEPS = (STEP_VERIFY,)
+
+
 class Progress:
-    """Where the steps report: a line of log, or a progress bar position.
+    """Where the steps report: a line of log, a progress bar position, or
+    the stage the run enters.
 
     `log` receives one line at a time; `bar` receives (done, total, label),
-    with `total` 0 to hide the bar.
+    with `total` 0 to hide the bar and -1 for a wait of unknown length;
+    `step` receives one of the STEP_* names.
     """
 
     def __init__(
         self,
         log: Callable[[str], None] | None = None,
         bar: Callable[[int, int, str], None] | None = None,
+        step: Callable[[str], None] | None = None,
     ) -> None:
         self._log = log or (lambda text: None)
         self._bar = bar or (lambda done, total, label: None)
+        self._step = step or (lambda name: None)
 
     def log(self, text: str) -> None:
         self._log(text)
 
     def bar(self, done: int, total: int, label: str = "") -> None:
         self._bar(done, total, label)
+
+    def busy(self, label: str) -> None:
+        """A wait whose length is unknown (erasing, a reboot)."""
+        self._bar(0, -1, label)
+
+    def step(self, name: str) -> None:
+        self._step(name)
 
 
 # ---------------------------------------------------------------------------
@@ -635,6 +659,7 @@ def install_firmware(port: str, manifest: Manifest, progress: Progress) -> ChipI
     factory = manifest.factory_image()
     loader, loader_offset = manifest.partition_image("app1")
     littlefs, littlefs_offset = manifest.partition_image("spiffs")
+    progress.step(STEP_DOWNLOAD)
     images = [
         (0, download(manifest.version, factory, progress)),
         (loader_offset, download(manifest.version, loader, progress)),
@@ -647,9 +672,13 @@ def install_firmware(port: str, manifest: Manifest, progress: Progress) -> ChipI
         info = chip.info()
         progress.log(f"chip on {port}: {info}")
         check_chip(info, manifest)
+        progress.step(STEP_ERASE)
         progress.log("erasing the flash")
+        progress.busy("erasing the flash")
         try:
             erase_flash(chip.esp)
+            progress.bar(0, 0)
+            progress.step(STEP_WRITE)
             for offset, path in images:
                 progress.log(f"writing {path.name} at 0x{offset:x}")
             # The factory image carries its own flash size in its header, so
@@ -1025,6 +1054,7 @@ def wait_for_node(port: str, progress: Progress, first_delay: float, deadline: f
     """Connect to the node once it is back after a reboot: wait
     `first_delay` seconds, then retry every 3 s up to `deadline` seconds."""
     progress.log(f"waiting for the node on {port}")
+    progress.busy("waiting for the node to start")
     time.sleep(first_delay)
     started = time.monotonic()
     while True:
@@ -1215,7 +1245,9 @@ def run(params: RunParams, progress: Progress) -> RunResult:
         if not params.confirm(summary):
             raise ProvisionError("flash cancelled")
         install_firmware(params.port, man, progress)
+        progress.step(STEP_RESTART)
         iface = wait_for_node(params.port, progress, first_delay=15)
+        progress.bar(0, 0)
     else:
         progress.log(f"connecting to the node on {params.port}")
         iface = connect_node(params.port)
@@ -1227,17 +1259,21 @@ def run(params: RunParams, progress: Progress) -> RunResult:
             progress.log("no profile: nothing to configure")
             return RunResult(state, [], [])
         if params.check_only:
+            progress.step(STEP_VERIFY)
             remaining = compare(iface, profile)
             if profile.app:
                 remaining += compare_app_settings(params.port, profile.app)
             _report(remaining, progress)
             return RunResult(state, [], remaining)
+        progress.step(STEP_SETTINGS)
         written = apply_profile(iface, profile, progress)
     finally:
         iface.close()
 
+    progress.step(STEP_VERIFY)
     if written:
         iface = wait_for_node(params.port, progress, first_delay=REBOOT_GRACE_S)
+        progress.bar(0, 0)
         try:
             state = node_identity(iface)
             remaining = compare(iface, profile)

@@ -49,7 +49,8 @@ module_config:
     # in clear at the precision below, readable by anyone).
     map_reporting_enabled: true
     map_report_settings:
-      publish_interval_secs: 3600
+      # Once a day (and at every start-up), the firmware's minimum being an hour.
+      publish_interval_secs: 86400
       position_precision: 32
 
 channels:

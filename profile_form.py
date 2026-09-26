@@ -62,7 +62,10 @@ class Field:
     kind: str  # `str`, `secret`, `bool`, `int`, `enum`, `timezone` or `ssid`
     help: str = ""
     choices: tuple[str, ...] = ()  # for `enum`
-    maximum: int = 1_000_000_000  # for `int`
+    minimum: int = 0  # for `int`
+    # For `int`. 2026-09-26: the firmware turns some intervals into
+    # milliseconds in a uint32 (clamped), so about 49.7 days at most.
+    maximum: int = 1_000_000_000
 
 
 # The long explanation of each setting, shown as the tooltip of its row
@@ -113,7 +116,8 @@ TIPS: dict[str, str] = {
     "(name, board and position at the precision below), in clear, readable by anyone. On by "
     "default; lower the precision below to show only the area.",
     "module_config.mqtt.map_report_settings.publish_interval_secs": "How often the node updates its "
-    "place on the public map, in seconds. 3600 is once an hour.",
+    "place on the public map, in seconds: 86400 is once a day, the default. The node also reports "
+    "at every start-up. The firmware allows one hour (3600) to about 49 days.",
     "module_config.mqtt.map_report_settings.position_precision": "How precisely the public map "
     "shows your position, in bits: 32 is exact, 16 about 700 m, 13 about 1.5 km, 11 about 6 km. "
     "Lower is more private.",
@@ -188,7 +192,7 @@ FIELDS: tuple[tuple[str, tuple[Field, ...]], ...] = (
             Field("module_config.mqtt.root", "Topic root", "str", "e.g. msh/EU_868"),
             Field("module_config.mqtt.proxy_to_client_enabled", "Proxy through the app", "bool", "the app connects to the broker for the node"),
             Field("module_config.mqtt.map_reporting_enabled", "Show this node on the public map", "bool", "position in clear, readable by anyone"),
-            Field("module_config.mqtt.map_report_settings.publish_interval_secs", "Public map: update interval", "int", "seconds"),
+            Field("module_config.mqtt.map_report_settings.publish_interval_secs", "Public map: update interval", "int", "seconds, 86400 = a day", minimum=3600, maximum=4_294_967),
             Field("module_config.mqtt.map_report_settings.position_precision", "Public map: position precision", "int", "1 to 32 bits", maximum=32),
         ),
     ),
@@ -462,7 +466,7 @@ class ProfileForm(QWidget):
             return combo
         if field.kind == "int":
             spin = QSpinBox()
-            spin.setRange(0, field.maximum)
+            spin.setRange(field.minimum, field.maximum)
             _no_wheel(spin)
             return spin
         if field.kind == "secret":

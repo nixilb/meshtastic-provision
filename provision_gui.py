@@ -18,7 +18,7 @@ import threading
 import time
 from typing import Callable
 
-from PySide6.QtCore import QObject, Qt, Signal
+from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import (
     QApplication,
@@ -83,6 +83,14 @@ class Window(QMainWindow):
         self._connect()
         self._refresh_ports()
         self._start(self._load_lists, busy=False)
+        # Watch the USB serial ports: a node plugged in is detected by
+        # itself, an unplugged one clears what was read.
+        self._known_ports = {p.device for p in provision.serial_ports()}
+        self._watch = QTimer(self)
+        self._watch.timeout.connect(self._watch_ports)
+        self._watch.start(1000)
+        if self._known_ports:
+            QTimer.singleShot(500, self._detect)
 
     # -- layout ---------------------------------------------------------
 
@@ -277,9 +285,35 @@ class Window(QMainWindow):
     # -- actions ----------------------------------------------------------
 
     def _refresh_ports(self) -> None:
+        current = self.port.currentData()
         self.port.clear()
         for port in provision.serial_ports():
             self.port.addItem(str(port), port.device)
+        index = self.port.findData(current)
+        if index >= 0:
+            self.port.setCurrentIndex(index)
+
+    def _watch_ports(self) -> None:
+        """Every second: react to a port appearing or disappearing."""
+        ports = {p.device for p in provision.serial_ports()}
+        added = ports - self._known_ports
+        removed = self._known_ports - ports
+        if not added and not removed:
+            return
+        self._known_ports = ports
+        self._refresh_ports()
+        for device in sorted(removed):
+            self._append(f"{device} unplugged")
+            if device == self.port.currentData() or self.port.count() == 0:
+                self._set_node(None)
+                self.chip = None
+                self.chip_label.setText("not read yet")
+                self.node_label.setText("not asked yet (plug the node in, or press Detect)")
+        for device in sorted(added):
+            self._append(f"{device} plugged in: detecting in 5 s")
+            self.port.setCurrentIndex(self.port.findData(device))
+            # Give the node time to boot before asking it who it is.
+            QTimer.singleShot(5000, self._detect)
 
     def _selected_port(self) -> str:
         device = self.port.currentData()
@@ -293,6 +327,10 @@ class Window(QMainWindow):
         self.events.lists.emit((boards, versions))
 
     def _detect(self) -> None:
+        if self.worker and self.worker.is_alive():
+            self._append("busy: press Detect once the current step is over")
+            return
+
         def work() -> None:
             port = self._selected_port()
             progress = self._progress()

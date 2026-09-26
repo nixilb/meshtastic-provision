@@ -1,7 +1,8 @@
-"""The settings form of the window: every setting of the example profile
-with a widget of the right kind (text, masked text, checkbox, number,
-choice among the protobuf enum values) and a checkbox saying whether the
-profile sets it.
+"""The settings form of the window (Qt): every setting of the example
+profile with a widget of the right kind (text, masked text with a Show
+button, checkbox, number, choice among the protobuf enum values) and a
+checkbox saying whether the profile sets it; an unticked setting keeps its
+value on the node and its widget is greyed.
 
 The form is the user's view of the profile; the YAML file behind it
 (`provision.DEFAULT_PROFILE`) is read when the window opens and written,
@@ -13,14 +14,26 @@ from __future__ import annotations
 
 import copy
 import tempfile
-import tkinter as tk
 from dataclasses import dataclass
 from pathlib import Path
-from tkinter import ttk
 from typing import Any
 
 import yaml
 from meshtastic.protobuf import channel_pb2, config_pb2
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QScrollArea,
+    QSpinBox,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 import provision
 from provision import ProvisionError
@@ -38,6 +51,7 @@ class Field:
     kind: str  # `str`, `secret`, `bool`, `int` or `enum`
     help: str = ""
     choices: tuple[str, ...] = ()  # for `enum`
+    maximum: int = 1_000_000_000  # for `int`
 
 
 def _enum_names(descriptor: Any) -> tuple[str, ...]:
@@ -65,7 +79,7 @@ FIELDS: tuple[tuple[str, tuple[Field, ...]], ...] = (
         "Wi-Fi",
         (
             Field("config.network.wifi_enabled", "Wi-Fi on", "bool", "on an ESP32, Wi-Fi turns Bluetooth off"),
-            Field("config.network.wifi_ssid", "SSID", "str"),
+            Field("config.network.wifi_ssid", "Network", "str"),
             Field("config.network.wifi_psk", "Password", "secret", "8 characters or more"),
         ),
     ),
@@ -80,8 +94,8 @@ FIELDS: tuple[tuple[str, tuple[Field, ...]], ...] = (
             Field("module_config.mqtt.root", "Topic root", "str", "e.g. msh/EU_868"),
             Field("module_config.mqtt.proxy_to_client_enabled", "Proxy through the app", "bool", "the app connects to the broker for the node"),
             Field("module_config.mqtt.map_reporting_enabled", "Map reports", "bool", "publishes the position in clear"),
-            Field("module_config.mqtt.map_report_settings.publish_interval_secs", "Map report interval (s)", "int"),
-            Field("module_config.mqtt.map_report_settings.position_precision", "Map report precision", "int", "1 to 32 bits"),
+            Field("module_config.mqtt.map_report_settings.publish_interval_secs", "Map report interval", "int", "seconds"),
+            Field("module_config.mqtt.map_report_settings.position_precision", "Map report precision", "int", "1 to 32 bits", maximum=32),
         ),
     ),
     (
@@ -90,7 +104,7 @@ FIELDS: tuple[tuple[str, tuple[Field, ...]], ...] = (
             Field("channels[0].role", "Role", "enum", choices=_enum_names(channel_pb2.Channel.Role.DESCRIPTOR)),
             Field("channels[0].settings.uplink_enabled", "Send to MQTT", "bool"),
             Field("channels[0].settings.downlink_enabled", "Receive from MQTT", "bool"),
-            Field("channels[0].settings.module_settings.position_precision", "Position precision", "int", "bits, 13 is about 1.5 km"),
+            Field("channels[0].settings.module_settings.position_precision", "Position precision", "int", "bits, 13 is about 1.5 km", maximum=32),
         ),
     ),
 )
@@ -168,16 +182,46 @@ def _unset(data: dict[str, Any], path: str) -> None:
         del container[key]
 
 
-class ProfileForm(ttk.Frame):
+class _Row:
+    """The widgets of one setting."""
+
+    def __init__(self, field: Field, present: QCheckBox, widget: QWidget) -> None:
+        self.field = field
+        self.present = present
+        self.widget = widget
+
+    def value(self) -> Any:
+        if self.field.kind == "bool":
+            return self.widget.isChecked()  # type: ignore[attr-defined]
+        if self.field.kind == "enum":
+            return self.widget.currentText()  # type: ignore[attr-defined]
+        if self.field.kind == "int":
+            return self.widget.value()  # type: ignore[attr-defined]
+        return self.widget.text()  # type: ignore[attr-defined]
+
+    def set(self, current: Any) -> None:
+        self.present.setChecked(current is not None)
+        self.widget.setEnabled(current is not None)
+        if self.field.kind == "bool":
+            self.widget.setChecked(bool(current))  # type: ignore[attr-defined]
+        elif self.field.kind == "enum":
+            index = self.widget.findText(str(current)) if current is not None else 0  # type: ignore[attr-defined]
+            self.widget.setCurrentIndex(max(index, 0))  # type: ignore[attr-defined]
+        elif self.field.kind == "int":
+            self.widget.setValue(int(current) if current is not None else 0)  # type: ignore[attr-defined]
+        else:
+            self.widget.setText("" if current is None else str(current))  # type: ignore[attr-defined]
+
+
+class ProfileForm(QWidget):
     """The form, embedded in the window. `load` fills it from the file (or
     the example for a new one), `save` validates and writes it."""
 
-    def __init__(self, parent: tk.Misc, path: Path) -> None:
+    def __init__(self, path: Path, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.path = path
         self.data: dict[str, Any] = {}
-        self.vars: dict[str, tk.Variable] = {}
-        self.present: dict[str, tk.BooleanVar] = {}
+        self.rows: dict[str, _Row] = {}
         self._build()
         self.load()
 
@@ -195,88 +239,74 @@ class ProfileForm(ttk.Frame):
             for path in ("config.network.wifi_ssid", "config.network.wifi_psk"):
                 _unset(data, path)
         self.data = data
-        for _group, fields in FIELDS:
-            for field in fields:
-                current = _get(data, field.path)
-                self.present[field.path].set(current is not None)
-                if field.kind == "bool":
-                    self.vars[field.path].set(bool(current))
-                elif field.kind == "enum":
-                    self.vars[field.path].set(str(current) if current is not None else field.choices[0])
-                else:
-                    self.vars[field.path].set("" if current is None else str(current))
+        for row in self.rows.values():
+            row.set(_get(data, row.field.path))
 
     def _build(self) -> None:
-        ttk.Label(
-            self,
-            text="Settings applied to the node. Ticked ones are written; an unticked one keeps its value on the node.",
-            wraplength=560,
-        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=8, pady=(0, 4))
-        canvas = tk.Canvas(self, highlightthickness=0, width=600)
-        scrollbar = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
-        inner = ttk.Frame(canvas)
-        inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=inner, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-        canvas.grid(row=1, column=0, sticky="nsew")
-        scrollbar.grid(row=1, column=1, sticky="ns")
-        self.rowconfigure(1, weight=1)
-        self.columnconfigure(0, weight=1)
-        inner.columnconfigure(2, weight=1)
-        # Wheel scrolling over the form (X11 sends buttons 4 and 5).
-        canvas.bind_all("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))
-        canvas.bind_all("<Button-5>", lambda e: canvas.yview_scroll(1, "units"))
-
-        row = 0
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        note = QLabel("Ticked settings are written to the node; an unticked one keeps the node's value.")
+        note.setWordWrap(True)
+        outer.addWidget(note)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        outer.addWidget(scroll, 1)
+        inner = QWidget()
+        scroll.setWidget(inner)
+        column = QVBoxLayout(inner)
         for group, fields in FIELDS:
-            ttk.Label(inner, text=group, font=("TkDefaultFont", 10, "bold")).grid(
-                row=row, column=0, columnspan=4, sticky="w", padx=8, pady=(12, 2)
-            )
-            row += 1
-            for field in fields:
-                present = tk.BooleanVar(value=False)
-                self.present[field.path] = present
-                ttk.Checkbutton(inner, variable=present).grid(row=row, column=0, sticky="w", padx=(8, 0))
-                ttk.Label(inner, text=field.label).grid(row=row, column=1, sticky="w", padx=4)
-                self._widget(inner, field).grid(row=row, column=2, sticky="ew", padx=4, pady=2)
+            box = QGroupBox(group)
+            grid = QGridLayout(box)
+            grid.setColumnStretch(2, 1)
+            for r, field in enumerate(fields):
+                present = QCheckBox()
+                present.setToolTip("Write this setting to the node")
+                label = QLabel(field.label)
+                widget = self._widget(field)
+                present.toggled.connect(widget.setEnabled)
+                grid.addWidget(present, r, 0)
+                grid.addWidget(label, r, 1)
+                grid.addWidget(widget, r, 2)
                 if field.help:
-                    ttk.Label(inner, text=field.help, foreground="#666").grid(row=row, column=3, sticky="w", padx=(4, 8))
-                row += 1
+                    hint = QLabel(field.help)
+                    hint.setStyleSheet("color: palette(mid);")
+                    grid.addWidget(hint, r, 3)
+                self.rows[field.path] = _Row(field, present, widget)
+            column.addWidget(box)
+        column.addStretch(1)
 
-    def _widget(self, parent: tk.Misc, field: Field) -> tk.Widget:
+    def _widget(self, field: Field) -> QWidget:
         if field.kind == "bool":
-            var = tk.BooleanVar()
-            self.vars[field.path] = var
-            return ttk.Checkbutton(parent, variable=var)
+            return QCheckBox()
         if field.kind == "enum":
-            var = tk.StringVar()
-            self.vars[field.path] = var
-            return ttk.Combobox(parent, textvariable=var, values=field.choices, state="readonly", width=14)
-        var = tk.StringVar()
-        self.vars[field.path] = var
-        return ttk.Entry(parent, textvariable=var, show="*" if field.kind == "secret" else "", width=24)
+            combo = QComboBox()
+            combo.addItems(field.choices)
+            return combo
+        if field.kind == "int":
+            spin = QSpinBox()
+            spin.setRange(0, field.maximum)
+            return spin
+        if field.kind == "secret":
+            return _SecretEdit()
+        edit = QLineEdit()
+        edit.setClearButtonEnabled(True)
+        return edit
 
     def collect(self) -> dict[str, Any]:
-        """The profile as the form shows it; raises on an invalid entry."""
+        """The profile as the form shows it; raises on an empty text."""
         data = copy.deepcopy(self.data)  # keeps the file's key order
-        for _group, fields in FIELDS:
-            for field in fields:
-                if not self.present[field.path].get():
-                    _unset(data, field.path)
-                    continue
-                raw = self.vars[field.path].get()
-                if field.kind == "bool":
-                    value: Any = bool(raw)
-                elif field.kind == "int":
-                    try:
-                        value = int(str(raw).strip())
-                    except ValueError:
-                        raise ProvisionError(f"{field.label}: expected a whole number, got {raw!r}") from None
-                else:
-                    value = str(raw).strip()
-                    if not value:
-                        raise ProvisionError(f"{field.label}: empty; untick it to leave the node's value")
-                _set(data, field.path, value)
+        for row in self.rows.values():
+            field = row.field
+            if not row.present.isChecked():
+                _unset(data, field.path)
+                continue
+            value = row.value()
+            if field.kind in ("str", "secret"):
+                value = str(value).strip()
+                if not value:
+                    raise ProvisionError(f"{field.label}: empty; untick it to leave the node's value")
+            _set(data, field.path, value)
         return data
 
     def save(self) -> Path:
@@ -302,3 +332,29 @@ class ProfileForm(ttk.Frame):
             raise ProvisionError(f"cannot save the settings: {err}") from err
         self.data = data
         return self.path
+
+
+class _SecretEdit(QWidget):
+    """A masked line edit with a Show button."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.edit = QLineEdit()
+        self.edit.setEchoMode(QLineEdit.EchoMode.Password)
+        show = QToolButton()
+        show.setText("Show")
+        show.setCheckable(True)
+        show.toggled.connect(
+            lambda on: self.edit.setEchoMode(QLineEdit.EchoMode.Normal if on else QLineEdit.EchoMode.Password)
+        )
+        layout.addWidget(self.edit, 1)
+        layout.addWidget(show)
+        self.setFocusProxy(self.edit)
+
+    def text(self) -> str:
+        return self.edit.text()
+
+    def setText(self, text: str) -> None:  # noqa: N802 - Qt naming, as QLineEdit
+        self.edit.setText(text)

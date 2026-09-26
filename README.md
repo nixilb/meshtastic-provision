@@ -4,14 +4,14 @@ Prepare a Meshtastic node plugged in over USB in one go: install the
 firmware (optional), then apply a settings profile and verify it. A
 companion to [meshtastic-desktop](../meshtastic-desktop_git), which expects
 its node configured as the example profile describes (MQTT client proxy on
-the public broker, region EU_868). Python, with a command line and a small
+the public broker, region EU_868). Python, with a command line and a Qt
 window; no interface of its own is needed on the node.
 
 ## Install
 
 Only [uv](https://docs.astral.sh/uv/) is needed; it fetches Python 3.13
-(whose build ships Tkinter, for the window) and the libraries `esptool`,
-`meshtastic`, `pyyaml`, `requests` and `pyserial` on the first run.
+and the libraries `esptool`, `meshtastic`, `pyyaml`, `requests`, `pyserial`
+and `PySide6-Essentials` (Qt, for the window; 80 MB) on the first run.
 
 ```sh
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -168,7 +168,7 @@ of remaining differences.
 |------|------|
 | `provision.py` | The steps: ports, downloads, chip, flash, profile, compare, apply |
 | `provision_cli.py` | Command line |
-| `provision_gui.py` | Tkinter window |
+| `provision_gui.py` | Qt window (PySide6) |
 | `profile_form.py` | The settings form of the window |
 | `node-profile.example.yaml` | Documented example profile |
 | `~/.config/meshtastic/node-profile.yaml` | The settings: saved by the window, default profile of the command line |

@@ -1,7 +1,8 @@
 # Project metadata for `uv`: `uv run provision_gui.py` (or provision_cli.py)
 # creates the virtual environment, installs the dependencies and runs the
-# script. Python 3.13 is pinned because uv's own 3.13 build ships Tkinter,
-# which the system Python may lack.
+# script. Python 3.13 is pinned so every machine (laptop, Raspberry Pi) runs
+# the same interpreter; PySide6-Essentials is Qt's widgets without the
+# multimedia and web modules (80 MB instead of 150).
 [project]
 name = "meshtastic-provision"
 version = "0.1.0"
@@ -13,4 +14,5 @@ dependencies = [
     "pyyaml>=6.0",
     "requests>=2.32",
     "pyserial>=3.5",
+    "PySide6-Essentials>=6.8",
 ]

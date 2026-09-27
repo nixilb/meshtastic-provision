@@ -1,0 +1,119 @@
+{
+  "thread": {
+    "id": "thr_701ac7445871",
+    "title": "Différence entre sigfox et LoRa",
+    "status": {
+      "type": "active"
+    },
+    "allowed_image_domains": [],
+    "created_at": "2026-09-21T08:09:30.322187",
+    "metadata": {
+      "created_at": "2026-09-21T08:09:30.322187",
+      "updated_at": "2026-09-26T15:36:55.749201+00:00",
+      "widget_type": "chat:main"
+    }
+  },
+  "user": {
+    "user_id": "nis",
+    "name": "nis",
+    "login": "nis"
+  },
+  "items": [
+    {
+      "id": "msg_c1648c18",
+      "thread_id": "thr_701ac7445871",
+      "created_at": "2026-09-21T08:09:30.322187",
+      "type": "user_message",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "différence entre sigfox et lora"
+        }
+      ],
+      "attachments": [],
+      "quoted_text": "",
+      "inference_options": {
+        "tool_choice": null,
+        "model": null
+      }
+    },
+    {
+      "id": "msg_c9352156",
+      "thread_id": "thr_701ac7445871",
+      "created_at": "2026-09-21T08:09:54.496022",
+      "type": "assistant_message",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "# Sigfox vs LoRa : les grandes différences\n\nLes deux sont des technologies **LPWAN** (réseaux bas débit, longue portée, faible consommation) sur bandes libres sub-GHz (868 MHz en Europe, 902-928 MHz aux US). Mais leur philosophie est très différente.\n\n## 1. Modèle économique — la différence la plus structurante\n\n| | **Sigfox** | **LoRa / LoRaWAN** |\n|---|---|---|\n| Modèle | Opérateur unique (0G network), abonnement par objet | Vous pouvez **déployer votre propre réseau** privé, ou passer par un opérateur |\n| Infrastructure | Vous ne possédez rien, vous achetez de la couverture | Vous achetez des gateways (quelques centaines d'€) et vous maîtrisez le réseau |\n| Souveraineté des données | Les messages transitent par le back-end Sigfox | Données possibles 100 % en interne (serveur LoRaWAN privé type ChirpStack) |\n\nC'est souvent le critère décisif : LoRa = autonomie, Sigfox = simplicité clé en main.\n\n## 2. Technologie radio\n\n- **Sigfox** : modulation **UNB** (Ultra Narrow Band, ~100 Hz), DBPSK. Chaque message est émis 3 fois sur 3 fréquences différentes, sans accusé de réception par défaut.\n- **LoRa** : modulation **CSS** (Chirp Spread Spectrum), brevetée par Semtech. Étalement de spectre avec facteurs d'étalement (SF7 à SF12) qui permettent d'arbitrer entre portée et débit.\n\nAttention au vocabulaire : **LoRa** = la couche radio (Semtech, propriétaire). **LoRaWAN** = le protocole réseau au-dessus, spécifié par la LoRa Alliance (ouvert).\n\n## 3. Capacité et charge utile\n\n| | Sigfox | LoRaWAN |\n|---|---|---|\n| Taille message montant | **12 octets** max | ~51 à 242 octets selon le SF |\n| Nombre de messages/jour | **140 max** (uplink) | Limité seulement par le *duty cycle* (1 % en Europe) |\n| Downlink | 4 messages/jour, 8 octets | Bidirectionnel, plus souple (classes A/B/C) |\n| Débit | 100 bps | 300 bps à 50 kbps |\n\n## 4. Portée et consommation\n\nComparables dans les faits : 3-10 km en urbain, 15-40 km en rural dégagé. Sigfox a un léger avantage en budget de liaison brut (UNB très robuste) ; LoRa compense par l'adaptation dynamique du débit (ADR). Côté batterie, les deux permettent des capteurs qui tiennent 5 à 10 ans sur une pile.\n\n## 5. Écosystème et pérennité\n\n- **Sigfox** : la société a été placée en redressement judiciaire en 2022 puis rachetée par le singapourien **UnaBiz**, qui a depuis ouvert une partie des spécifications. Le réseau reste opérationnel mais l'épisode a refroidi beaucoup d'industriels.\n- **LoRaWAN** : écosystème très large (LoRa Alliance, The Things Network, Helium, opérateurs nationaux, déploiements privés massifs — Enedis Linky, agriculture, smart building). Dépendance résiduelle à Semtech pour les puces radio, mais des alternatives apparaissent.\n\n## En résumé — comment choisir\n\n**Sigfox** convient si : vous avez beaucoup d'objets très simples, éparpillés géographiquement (logistique, traceurs, alarmes), peu de données, et que vous ne voulez gérer aucune infrastructure.\n\n**LoRaWAN** convient si : vous couvrez un site ou une zone définie (usine, campus, exploitation agricole, ville), vous voulez maîtriser votre réseau et vos données, vous avez besoin de plus de messages, de charges utiles plus grosses ou de downlink fiable.\n\nEt si vos objets sont peu nombreux mais doivent remonter plus de données, regardez aussi **NB-IoT / LTE-M** (réseaux opérateurs cellulaires), qui ont largement grignoté le terrain de Sigfox ces dernières années.",
+          "annotations": []
+        }
+      ],
+      "model": "anthropic:claude-opus-5"
+    },
+    {
+      "id": "msg_72e48a4f",
+      "thread_id": "thr_701ac7445871",
+      "created_at": "2026-09-21T08:13:37.173637",
+      "type": "user_message",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "et au niveau des frequences"
+        }
+      ],
+      "attachments": [],
+      "quoted_text": "",
+      "inference_options": {
+        "tool_choice": null,
+        "model": null
+      }
+    },
+    {
+      "id": "msg_d447aa83",
+      "thread_id": "thr_701ac7445871",
+      "created_at": "2026-09-21T08:14:12.864101",
+      "type": "assistant_message",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "# Fréquences : Sigfox vs LoRaWAN\n\nLes deux vivent dans les **mêmes bandes ISM sub-GHz**, donc la différence n'est pas la bande mais la **façon de l'occuper**.\n\n## Le point clé : largeur de canal\n\n| | Sigfox | LoRa |\n|---|---|---|\n| Largeur d'un signal | **100 Hz** (UNB) — 600 Hz aux US | **125 / 250 / 500 kHz** (CSS) |\n| Conséquence | Des milliers de \"micro-canaux\" tiennent dans 192 kHz | Peu de canaux, mais robustesse par étalement |\n\nUn message Sigfox est 1000 fois plus étroit qu'un message LoRa. C'est toute la logique : Sigfox concentre l'énergie sur une porteuse quasi ponctuelle, LoRa l'étale sur une large bande.\n\n## Europe (EU868 / RC1)\n\n**Sigfox**\n- Uplink : **868,034 – 868,226 MHz** (bande de 192 kHz centrée sur 868,130), 100 bps, 14 dBm (25 mW), duty cycle 1 %\n- Downlink : **869,525 MHz**, 600 bps, jusqu'à 27 dBm côté station de base\n- Le device choisit sa fréquence **pseudo-aléatoirement** dans les 192 kHz, et répète le message 3 fois sur 3 fréquences — pas de plan de canaux à configurer\n\n**LoRaWAN**\n- 3 canaux obligatoires (join) : **868,1 / 868,3 / 868,5 MHz**, 125 kHz, 14 dBm, duty cycle 1 %\n- Canaux additionnels courants : 867,1 / 867,3 / 867,5 / 867,7 / 867,9 MHz\n- 868,3 MHz en 250 kHz (DR6) et 868,8 MHz en FSK 50 kbps\n- **RX2 (downlink) : 869,525 MHz, SF12/SF9 selon le réseau** — même fréquence que Sigfox, car c'est la sous-bande 869,4–869,65 qui autorise **27 dBm et 10 % de duty cycle** en Europe\n\nÀ retenir : les deux downlinks utilisent 869,525 MHz, pour la même raison réglementaire.\n\n## Autres régions\n\n| Région | Sigfox (RC) | LoRaWAN |\n|---|---|---|\n| Europe | RC1 : 868 MHz | EU868 (863–870) |\n| USA / Canada | RC2 : 902,2 MHz (uplink), 905,2 (downlink), 600 bps, 22 dBm | US915 : 64 canaux 125 kHz (902,3→914,9) + 8 canaux 500 kHz ; downlink 923,3→927,5 |\n| Amérique latine / APAC | RC4 : 920–923 MHz | AU915, AS923 |\n| Japon | RC3 : 923 MHz, **LBT obligatoire** | AS923 (LBT) |\n| Corée | RC5 : 922–923 MHz | KR920 |\n| Inde | RC6 : 865–867 MHz | IN865 |\n| Russie | RC7 : 868,8–869,2 MHz | RU864 |\n| Chine | — | CN470 (470–510 MHz) |\n\nConséquence pratique : un capteur Sigfox est lié à sa **RC zone** (un device RC1 ne fonctionne pas aux US sans reconfiguration/matériel adapté) — même contrainte en LoRaWAN, où la région est un paramètre de la stack.\n\n## Les règles européennes qui conditionnent tout (ETSI EN 300 220)\n\n| Sous-bande | Puissance max | Duty cycle |\n|---|---|---|\n| 863,0 – 868,0 | 14 dBm | 1 % |\n| 868,0 – 868,6 | 14 dBm | 1 % |\n| 868,7 – 869,2 | 14 dBm | 0,1 % |\n| **869,4 – 869,65** | **27 dBm** | **10 %** |\n| 869,7 – 870,0 | 14 dBm | 1 % (ou 0,1 %) |\n\nC'est ce 1 % qui limite en pratique le nombre de messages : à SF12 en LoRa, un paquet dure ~1,5 s d'air time, ce qui impose ~2,5 minutes de silence ensuite. Sigfox, lui, plafonne administrativement à 140 messages/jour, ce qui revient au même ordre de grandeur.\n\n## Et en dehors du sub-GHz\n\n- **LoRa 2,4 GHz** (puce Semtech SX1280) : bande mondiale unique, **pas de duty cycle**, débits plus élevés, mais portée nettement réduite. Utile pour des déploiements internationaux ou indoor denses.\n- Sigfox n'a pas d'équivalent.\n\n**En résumé** : même terrain de jeu réglementaire, occupation opposée. Sigfox = ultra-étroit, fréquence tirée au hasard, zéro planification. LoRa = canaux larges définis explicitement, avec un plan de fréquences que vous configurez et maîtrisez — ce qui va de pair avec la possibilité d'avoir votre propre réseau.",
+          "annotations": []
+        }
+      ],
+      "model": "anthropic:claude-opus-5"
+    },
+    {
+      "id": "msg_6bbe1844",
+      "thread_id": "thr_701ac7445871",
+      "created_at": "2026-09-26T15:36:29.649713",
+      "type": "user_message",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "et les portées?"
+        }
+      ],
+      "attachments": [],
+      "quoted_text": "",
+      "inference_options": {
+        "tool_choice": null,
+        "model": null
+      }
+    },
+    {
+      "id": "msg_92860138",
+      "thread_id": "thr_701ac7445871",
+      "created_at": "2026-09-26T15:36:55.749182",
+      "type": "assistant_message",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "# Portées : Sigfox vs LoRaWAN\n\nLes deux technologies ont des portées **du même ordre**. L'écart vient surtout du terrain, de la hauteur des antennes et de la densité du réseau.\n\n## Ordres de grandeur\n\n| Environnement | Sigfox | LoRaWAN |\n|---|---|---|\n| Urbain dense | 3 à 10 km | 2 à 5 km |\n| Péri-urbain | 10 à 20 km | 5 à 15 km |\n| Rural dégagé | 30 à 50 km | 15 à 30 km |\n| Vue directe (mer, montagne, ballon) | > 100 km | > 100 km, record à plusieurs centaines de km depuis un ballon stratosphérique |\n| Indoor profond (sous-sol, compteur en cave) | Difficile | Difficile, un peu mieux avec une gateway locale |\n\nSigfox a un **léger avantage en portée brute**. LoRaWAN compense par la possibilité de **poser une gateway là où on en a besoin**.\n\n## Pourquoi : le bilan de liaison (link budget)\n\nLa portée se déduit de la puissance d'émission moins la sensibilité du récepteur :\n\n| | Sigfox | LoRa (SF12, 125 kHz) |\n|---|---|---|\n| Puissance device (EU) | 14 dBm | 14 dBm |\n| Sensibilité station de base | environ −142 dBm | environ −137 à −141 dBm |\n| **Bilan de liaison** | **environ 156 à 160 dB** | **environ 151 à 157 dB** |\n\nLa modulation UNB (100 Hz) de Sigfox capte très peu de bruit, d'où sa sensibilité excellente. LoRa atteint une sensibilité comparable grâce à l'étalement de spectre, mais seulement à SF12.\n\n## LoRa : la portée se règle avec le spreading factor\n\n| SF | Sensibilité (125 kHz) | Débit | Temps d'antenne (≈10 octets) | Portée relative |\n|---|---|---|---|---|\n| SF7 | −123 dBm | 5,5 kbps | ~40 ms | 1× |\n| SF9 | −129 dBm | 1,8 kbps | ~150 ms | ~1,5× |\n| SF10 | −132 dBm | 1 kbps | ~300 ms | ~1,8× |\n| SF12 | −137 dBm | 250 bps | ~1,2 à 1,5 s | ~2,5× |\n\nC'est un **compromis** : plus de portée coûte plus de temps d'antenne, donc plus de batterie consommée et moins de messages autorisés par le duty cycle de 1 %. L'**ADR** (Adaptive Data Rate) ajuste le SF automatiquement : un capteur proche de la gateway passe en SF7, un capteur lointain en SF12.\n\nSigfox n'a pas ce réglage : un seul débit, toujours à portée maximale.\n\n## Ce qui compte vraiment sur le terrain\n\n1. **La hauteur de l'antenne de la gateway ou station de base.** C'est le facteur n°1. Passer de 2 m à 30 m (toit, pylône) peut multiplier la portée par 3 à 5, parce qu'on dégage la zone de Fresnel.\n2. **La pénétration dans les bâtiments.** Compter 10 à 20 dB de perte par mur porteur ou dalle béton, et 20 à 30 dB pour un sous-sol. En pratique, les deux technologies atteignent l'indoor profond grâce à la densité du réseau, pas à leur portée brute.\n3. **La diversité spatiale.** Un message Sigfox est reçu en moyenne par environ 3 stations de base. En LoRaWAN, toutes les gateways à portée le reçoivent aussi. Plus le réseau est dense, meilleure est la fiabilité.\n4. **La règle des 6 dB.** En espace libre, 6 dB de bilan en plus doublent la distance. En milieu urbain, les mêmes 6 dB ne donnent plus que +40 % environ.\n5. **L'antenne du capteur.** Une antenne miniature mal accordée dans un boîtier métallique peut faire perdre 10 dB, c'est-à-dire l'essentiel de l'avantage théorique.\n\n## La liaison descendante (downlink)\n\nDans les deux cas, la station de base émet à 27 dBm sur 869,525 MHz. Le downlink porte donc généralement aussi loin que l'uplink. Ce qui le limite, c'est la sensibilité du device et la capacité du réseau, pas la portée.\n\n## En résumé\n\n- **Sigfox** : portée maximale garantie à chaque message, mais on dépend de la couverture de l'opérateur. Si la zone est mal couverte, on ne peut rien y faire.\n- **LoRaWAN** : portée brute un peu inférieure et réglable. Surtout, on peut **ajouter une gateway** pour couvrir un sous-sol, une vallée ou un site isolé. Sur un site maîtrisé (usine, campus, exploitation), c'est souvent plus décisif que quelques dB de bilan de liaison.\n\nPour un projet réel, faites une **campagne de mesures** avec un testeur de terrain (Adeunis FTD, RFTrack ou équivalent) avant de dimensionner. Les écarts entre la théorie et le terrain dépassent souvent un facteur 2.",
+          "annotations": []
+        }
+      ],
+      "model": "anthropic:claude-opus-5-5"
+    }
+  ]
+}

@@ -40,6 +40,8 @@ import yaml
 from esptool.logger import TemplateLogger
 from google.protobuf.descriptor import FieldDescriptor
 
+import usages
+
 # Where per-board firmware files are published (manifest and images).
 FILES_URL = "https://raw.githubusercontent.com/meshtastic/meshtastic.github.io/master"
 # GitHub API listing of firmware releases.
@@ -71,7 +73,9 @@ REBOOT_GRACE_S = 8
 NODE_WAIT_S = 120
 
 # Sections of the profile the tools accept.
-PROFILE_KEYS = {"owner", "owner_short", "config", "module_config", "channels", "app", "position"}
+# `usage` only names the usage the settings were started from (usages.py);
+# nothing is written from it.
+PROFILE_KEYS = {"owner", "owner_short", "config", "module_config", "channels", "app", "position", "usage"}
 # The node's fixed position (`position` section): degrees and metres.
 POSITION_BOUNDS = {"latitude": (-90.0, 90.0), "longitude": (-180.0, 180.0), "altitude": (-500.0, 9000.0)}
 # meshtastic-desktop's settings a profile may set (`app` section): the
@@ -531,9 +535,17 @@ class ChipInfo:
     chip: str  # family as manifests name it, e.g. `esp32s3`
     mac: str  # `aa:bb:cc:dd:ee:ff`
     flash_bytes: int
+    # PSRAM inside the chip's package, as its eFuses say (esptool's chip
+    # features). None when the eFuses cannot tell: a classic ESP32 may have
+    # a separate PSRAM chip on the board (the T-Beam does), which they do
+    # not record. On the other families False is taken as none: the
+    # ESP32-S3 boards Meshtastic lists with PSRAM (Station G2, T-Deck, XIAO
+    # S3...) have it in the package, and later chips have no PSRAM bus.
+    psram: bool | None = None
 
     def __str__(self) -> str:
-        return f"{self.chip}, MAC {self.mac}, {self.flash_bytes // (1024 * 1024)} MB flash"
+        psram = {True: ", PSRAM", False: ", no PSRAM", None: ""}[self.psram]
+        return f"{self.chip}, MAC {self.mac}, {self.flash_bytes // (1024 * 1024)} MB flash{psram}"
 
 
 class _EsptoolLog(TemplateLogger):
@@ -642,10 +654,13 @@ class _Chip:
             raise ProvisionError(f"unrecognised flash size {size!r}")
         flash_bytes = int(match.group(1)) * (1024 * 1024 if match.group(2) == "MB" else 1024)
         mac = self.esp.read_mac("BASE_MAC")
+        chip = self.esp.CHIP_NAME.lower().replace("-", "")
+        embedded = any("PSRAM" in feature for feature in self.esp.get_chip_features())
         return ChipInfo(
-            chip=self.esp.CHIP_NAME.lower().replace("-", ""),
+            chip=chip,
             mac=":".join(f"{b:02x}" for b in mac),
             flash_bytes=flash_bytes,
+            psram=True if embedded else (None if chip == "esp32" else False),
         )
 
 
@@ -744,6 +759,8 @@ class Profile:
     # The node's fixed position: latitude and longitude in degrees (both or
     # neither), altitude in metres.
     position: dict[str, float] = field(default_factory=dict)
+    # The usage the settings were started from (a key of usages.BY_KEY).
+    usage: str | None = None
 
     def is_empty(self) -> bool:
         return not (
@@ -819,7 +836,27 @@ def load_profile(path: Path) -> Profile:
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not low <= value <= high:
             raise ProvisionError(f"profile {path}: position.{key} must be a number from {low:g} to {high:g}")
     profile.position = {key: float(value) for key, value in position.items()}
+    usage = data.get("usage")
+    if usage is not None and usage not in usages.BY_KEY:
+        raise ProvisionError(f"profile {path}: usage must be one of {sorted(usages.BY_KEY)}")
+    profile.usage = usage
     return profile
+
+
+def needs_psram(profile: Profile) -> bool:
+    """Whether the profile turns Store & Forward on: the firmware runs it
+    only with 1 MB of PSRAM free and otherwise disables it without a word
+    (StoreForwardModule.cpp, "device doesn't have PSRAM")."""
+    return profile.module_config.get("store_forward", {}).get("enabled") is True
+
+
+def check_psram(profile: Profile, info: ChipInfo) -> None:
+    """Refuse a profile that needs PSRAM on a chip known to have none."""
+    if needs_psram(profile) and info.psram is False:
+        raise ProvisionError(
+            f"Store & Forward needs PSRAM, which this {info.chip} does not have: "
+            "choose a board with PSRAM, or another usage"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1314,6 +1351,7 @@ def run(params: RunParams, progress: Progress) -> RunResult:
         man = manifest(params.flash.version, board)
         info = detect_chip(params.port, progress)
         check_chip(info, man)
+        check_psram(profile, info)
         if identity and identity.mac and identity.mac != info.mac:
             raise ProvisionError(f"the chip on {params.port} ({info.mac}) is not the node that answered ({identity.mac})")
         summary = (
@@ -1328,8 +1366,14 @@ def run(params: RunParams, progress: Progress) -> RunResult:
         iface = wait_for_node(params.port, progress, first_delay=15)
         progress.bar(0, 0)
     else:
-        progress.log(f"connecting to the node on {params.port}")
-        iface = connect_node(params.port)
+        if needs_psram(profile) and not params.check_only:
+            # Reading the chip restarts the node: wait for it to come back.
+            check_psram(profile, detect_chip(params.port, progress))
+            iface = wait_for_node(params.port, progress, first_delay=REBOOT_GRACE_S)
+            progress.bar(0, 0)
+        else:
+            progress.log(f"connecting to the node on {params.port}")
+            iface = connect_node(params.port)
 
     try:
         state = node_identity(iface)

@@ -48,6 +48,7 @@ from PySide6.QtWidgets import (
 import geolocate
 import provision
 import timezones
+import usages
 import wifi
 from provision import ProvisionError
 
@@ -406,6 +407,27 @@ class ProfileForm(QWidget):
             QPalette.ColorRole.WindowText if dirty else QPalette.ColorRole.PlaceholderText
         )
         self.changed.emit()
+
+    @property
+    def usage(self) -> str | None:
+        """The key of the usage the settings were started from, if any."""
+        return self.data.get("usage")
+
+    def apply_usage(self, usage: usages.Usage) -> None:
+        """Write `usage`'s settings into the form: a shown setting gets its
+        row ticked and filled (or unticked for `KEEP`), a hidden one is set
+        in the data the form saves. Nothing is saved; the form stays
+        editable."""
+        self.data["usage"] = usage.key
+        for path, value in usage.settings.items():
+            row = self.rows.get(path)
+            if row is not None:
+                row.set(value)
+            elif value is usages.KEEP:
+                _unset(self.data, path)
+            else:
+                _set(self.data, path, value)
+        self._set_dirty(True)
 
     def save_clicked(self) -> bool:
         """The Save button: validate and write; an invalid entry is named

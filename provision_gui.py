@@ -13,6 +13,7 @@ log pane; the buttons are disabled meanwhile.
 
 from __future__ import annotations
 
+import html
 import sys
 import threading
 import time
@@ -34,6 +35,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSplitter,
     QToolButton,
     QVBoxLayout,
@@ -42,6 +44,7 @@ from PySide6.QtWidgets import (
 
 import provision
 import theme
+import usages
 from profile_form import ProfileForm
 from provision import FlashParams, Progress, ProvisionError, RunParams
 
@@ -157,6 +160,15 @@ class Window(QMainWindow):
         self.backup.setChecked(True)
         form.addRow("", self.backup)
 
+        # What the node is for (doc/Usages.md): picking a usage writes its
+        # settings into the form on the right, which stays editable.
+        self.usage = QComboBox()
+        self.usage.setPlaceholderText("choose what the node is for")
+        for usage in usages.USAGES:
+            self.usage.addItem(usage.label, usage.key)
+        self.usage.activated.connect(self._usage_picked)
+        form.addRow("Usage", self.usage)
+
         # The actions, each shown only when it can run (see _update_buttons).
         buttons = QHBoxLayout()
         self.flash_button = QPushButton("Flash && configure")  # "&&" shows one "&" (a single one marks a shortcut)
@@ -193,6 +205,22 @@ class Window(QMainWindow):
         self.run_steps: tuple[str, ...] = ()
         self.current_step: str | None = None
 
+        # The chosen usage explained: what it is for, how to set it up, the
+        # settings it writes (see _show_usage).
+        self.usage_doc = QLabel("")
+        self.usage_doc.setWordWrap(True)
+        self.usage_doc.setTextFormat(Qt.TextFormat.RichText)
+        self.usage_doc.setContentsMargins(4, 8, 4, 8)
+        self.usage_doc.setAlignment(Qt.AlignmentFlag.AlignTop)
+        # Scrolled rather than growing the window: a usage's text is long.
+        self.usage_box = QScrollArea()
+        self.usage_box.setWidgetResizable(True)
+        self.usage_box.setFrameShape(QScrollArea.Shape.NoFrame)
+        self.usage_box.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.usage_box.setWidget(self.usage_doc)
+        self.usage_box.setVisible(False)
+        column.addWidget(self.usage_box, 1)
+
         # The technical log, folded by default.
         self.details = QToolButton()
         self.details.setText("Details")
@@ -221,6 +249,10 @@ class Window(QMainWindow):
             QMessageBox.critical(self, "Settings", str(err))
             raise SystemExit(1) from err
         right_layout.addWidget(self.form)
+        # The form's usage follows a reload or a save; picking one in the
+        # list writes it into the form (_usage_picked).
+        self.form.changed.connect(self._show_usage)
+        self._show_usage()
         splitter.addWidget(right)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 1)
@@ -361,7 +393,13 @@ class Window(QMainWindow):
     def _show_details(self, shown: bool) -> None:
         self.details.setArrowType(Qt.ArrowType.DownArrow if shown else Qt.ArrowType.RightArrow)
         self.log.setVisible(shown)
-        self.left_column.setStretch(self.left_column.count() - 1, 0 if shown else 1)
+        self._update_stretch()
+
+    def _update_stretch(self) -> None:
+        """The usage's text and the log share the column's height; with
+        neither shown, the final stretch keeps everything at the top."""
+        filled = self.log.isVisibleTo(self) or self.usage_box.isVisibleTo(self)
+        self.left_column.setStretch(self.left_column.count() - 1, 0 if filled else 1)
 
     # -- slots ------------------------------------------------------------
 
@@ -423,6 +461,10 @@ class Window(QMainWindow):
         # board may still be filled in by the node itself.
         self.device_form.setRowVisible(self.board, detected)
         self.device_form.setRowVisible(self.version, detected)
+        # The usage once there is a node to prepare.
+        self.device_form.setRowVisible(self.usage, detected)
+        self.usage_box.setVisible(detected and bool(self.usage_doc.text()))
+        self._update_stretch()
         self.device_form.setRowVisible(self.backup, self.identity is not None)
         self._update_buttons()
 
@@ -470,6 +512,40 @@ class Window(QMainWindow):
         self.chip = info  # type: ignore[assignment]
         self.chip_label.setText(str(info))
         self._fill_boards()
+        self._show_usage()
+
+    def _usage_picked(self, index: int) -> None:
+        """A usage chosen in the list: its settings go into the form."""
+        usage = usages.BY_KEY[self.usage.itemData(index)]
+        if usage.key != self.form.usage:
+            self.form.apply_usage(usage)
+        self._show_usage()
+
+    def _show_usage(self) -> None:
+        """The list on the form's usage, and above Details the usage: what
+        it is for, how to set it up, the settings it writes. First, why the
+        plugged board cannot serve it, if so (Store & Forward without PSRAM:
+        see provision.check_psram)."""
+        key = self.form.usage
+        self.usage.setCurrentIndex(self.usage.findData(key) if key else -1)
+        usage = usages.BY_KEY.get(key) if key else None
+        text = ""
+        if usage:
+            if usage.needs_psram and self.chip is not None and self.chip.psram is False:
+                text += (
+                    f"<p><b style='color: #c62828'>Not for this board: its {self.chip.chip} has no PSRAM, "
+                    "which Store &amp; Forward needs. Configuring it would be refused.</b></p>"
+                )
+            text += f"<p><b>{html.escape(usage.label)}</b></p><p>{html.escape(usage.description)}</p>"
+            steps = "".join(f"<li>{html.escape(step)}</li>" for step in usage.setup)
+            text += f"<p><b>How to set it up</b></p><ol>{steps}</ol>"
+            rows = "".join(
+                f"<tr><td>{html.escape(label)}</td><td style='padding-left: 16px'>{html.escape(value)}</td></tr>"
+                for label, value in usage.setting_lines()
+            )
+            text += f"<p><b>Settings it writes</b></p><table>{rows}</table>"
+        self.usage_doc.setText(text)
+        self._update_rows()  # the text shows only once a node is detected
 
     def _fill_boards(self) -> None:
         """The board list, reduced to the detected chip's family. Nothing is

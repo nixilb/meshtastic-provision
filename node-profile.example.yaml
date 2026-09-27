@@ -6,11 +6,16 @@
 # look for), fill in the secrets and keep that copy out of any repository.
 #
 # Only the fields written here are compared and written; every other
-# setting keeps its value /modon the node. Field names, sections and enum
+# setting keeps its value on the node. Field names, sections and enum
 # values are those of Meshtastic's protobufs (config.proto,
 # module_config.proto, channel.proto), in snake_case, as `meshtastic
 # --export-config` prints them. The `security` section and channel keys
 # (`psk`) are refused: the node keeps its own.
+
+# What the node is for (usages.py): the window's Usage list shows it and
+# writes that usage's settings when another one is picked. These settings
+# are those of "Node attached to a PC".
+usage: pc
 
 # Node name (long) and short name (4 characters at most).
 owner: my-node-01
@@ -25,12 +30,16 @@ config:
     # Allow the node's packets to be forwarded to MQTT by other gateways.
     config_ok_to_mqtt: true
   device:
+    # An ordinary node that relays what it hears.
+    role: CLIENT
     # POSIX time zone of the node's clock (Europe/Paris).
     tzdef: "CET-1CEST,M3.5.0,M10.5.0/3"
   position:
     # The node does not move: say where it is twice a day rather than
     # hourly (the firmware's default and minimum).
     position_broadcast_secs: 43200
+    # No extra position when it moves: it never does.
+    position_broadcast_smart_enabled: false
   display:
     # Screen lit for a minute after a press or a message (10 by default);
     # ignored by boards without a screen.

@@ -46,11 +46,11 @@ uv run provision_gui.py
 Left, the node and the actions; right, the settings form. Plug the node
 in: the window sees the port, asks the node which board it is (a running
 firmware reports its build target, e.g. `heltec-v3`, and its MAC address),
-then reads the chip (family, MAC, flash size). The board list is reduced to
+then reads the chip (family, MAC, flash size, in-package PSRAM). The board list is reduced to
 the chip's family and the node's board is preselected. A blank board
 answers nothing: choose it by hand. With several nodes plugged in, picking
-a port in the list detects that one. Choose the firmware version, fill the
-settings, then:
+a port in the list detects that one. Choose the firmware version and the
+usage, check the settings, then:
 
 - Flash & configure: after a confirmation, erases the flash, installs the firmware, waits
   for the node to boot, applies the settings and verifies them. With the
@@ -60,9 +60,23 @@ settings, then:
 - Configure only: applies the settings to the node as it is.
 - Check: reports the settings that differ, writes nothing.
 
-The settings form lists every setting of the example profile: a checkbox
-says whether it is applied (unticked, the node keeps its own value), enum
-values come as a choice list, passwords are masked. The form is validated
+The Usage list says what the node is for, after `doc/Usages.md`:
+position tracking, off-grid messaging, emergency relay, community relay
+and gateway, sensors and telemetry, range test sender or receiver, node
+attached to a PC. Picking one writes its settings into the form (role,
+position and screen intervals, MQTT, the public channel's uplink and
+downlink, telemetry, Store & Forward, range test; see `usages.py`), and
+above "Details", the window explains the usage, lists what to do to put
+the node to work (power, placement, the other nodes needed), then the
+settings it writes. Every usage sets the same settings, so switching replaces them
+all. The form stays editable. Store & Forward (emergency relay) needs
+PSRAM: on a chip known to have none, the window says so and the run is
+refused.
+
+The settings form shows the settings a user chooses; the others (role,
+intervals, modules) come from the usage and are saved with the form. A
+checkbox says whether a setting is applied (unticked, the node keeps its
+own value), enum values come as a choice list, passwords are masked. The form is validated
 and saved to `~/.config/meshtastic/node-profile.yaml` before each action
 and when the window closes; that file is the command line's default
 profile, so both tools share the same settings.
@@ -173,6 +187,14 @@ Rules:
   fills it from this computer's position: the Wi-Fi networks around looked
   up by BeaconDB (tens of metres where they are mapped), else the public IP
   address (the town only); the source and precision are shown.
+- `usage`: the usage the settings were started from (a key of
+  `usages.py`: `tracking`, `off-grid`, `emergency`, `community`, `sensor`,
+  `range-sender`, `range-receiver`, `pc`). Nothing is written from it: the
+  settings themselves are in the profile.
+- `module_config.store_forward.enabled: true` needs PSRAM: the chip is read
+  first (which restarts the node) and a chip whose eFuses say it has none
+  is refused. A classic ESP32 does not record an external PSRAM chip
+  (T-Beam), so it is let through.
 - `config.device.tzdef` is the POSIX rule the node needs
   (`CET-1CEST,M3.5.0,M10.5.0/3`); the window shows and takes named zones
   (`Europe/Paris`) and converts with the system's time zone database.
@@ -220,6 +242,7 @@ and the icon.
 | `provision_cli.py` | Command line |
 | `provision_gui.py` | Qt window (PySide6) |
 | `profile_form.py` | The settings form of the window |
+| `usages.py` | The usages a node can be prepared for, as settings (the window's Usage list) |
 | `timezones.py` | Named time zones (`Europe/Paris`) to and from the node's POSIX rule |
 | `geolocate.py` | This computer's position for "My position" (BeaconDB, then the IP address) |
 | `wifi.py` | The Wi-Fi networks this computer sees (NetworkManager), for the Nearby menu |

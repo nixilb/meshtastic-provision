@@ -81,15 +81,9 @@ TIPS: dict[str, str] = {
     "config.device.tzdef": "The node's time zone, so the times on its screen and in its logs are "
     "local, summer time included. Choose the zone of the place where the node is, named after its "
     "largest city (Europe/Paris for France). Type part of the name to find it.",
-    "config.display.screen_on_secs": "How long the node's small screen stays lit after a button "
-    "press or a message, in seconds. Ten minutes by default; a minute is enough for a node nobody "
-    "watches. Ignored by boards without a screen.",
     "config.lora.region": "The radio band the node may legally transmit on. It depends on the "
     "country: EU_868 for France and the European Union, US for North America, and so on. A node "
     "with no region set stays silent. A wrong region breaks the law and reaches no one.",
-    "config.lora.ignore_mqtt": "When ticked on, the node throws away every message that came from "
-    "the Internet (MQTT). Keep it OFF: meshtastic-desktop brings the Internet's messages to the "
-    "node, and with this on they are silently dropped.",
     "config.lora.config_ok_to_mqtt": "Lets other people's Internet gateways pass your node's "
     "messages on to the Internet. Keep it on so your messages travel further than your radio "
     "reaches.",
@@ -97,9 +91,6 @@ TIPS: dict[str, str] = {
     "has no GPS: it gives this fixed position to the mesh, rounded to the precisions set below. "
     "'My position' fills it from this computer's position; you can also copy it from an online map "
     "(right-click on the place).",
-    "config.position.position_broadcast_secs": "How often the node tells the mesh where it is, in "
-    "seconds. The firmware's default is every hour; a node that never moves can say it twice a "
-    "day (43200) or once (86400) and leave the airtime to messages. One hour is the minimum.",
     "position.longitude": "Where the node is, east-west, in degrees (2.3522 for Paris; negative west "
     "of Greenwich).",
     "position.altitude": "The node's height above sea level, in metres. Optional: leave it unticked "
@@ -184,14 +175,12 @@ FIELDS: tuple[tuple[str, tuple[Field, ...]], ...] = (
             Field("owner", "Name", "str", "long name, shown in the mesh"),
             Field("owner_short", "Short name", "str", "4 characters at most"),
             Field("config.device.tzdef", "Time zone", "timezone", "type a city to search"),
-            Field("config.display.screen_on_secs", "Screen timeout", "int", "seconds, boards with a screen", minimum=1, maximum=4_294_967),
         ),
     ),
     (
         "LoRa",
         (
             Field("config.lora.region", "Region", "enum", choices=_enum_names(config_pb2.Config.LoRaConfig.RegionCode.DESCRIPTOR)),
-            Field("config.lora.ignore_mqtt", "Ignore packets from MQTT", "bool", "must be off for the app's MQTT proxy"),
             Field("config.lora.config_ok_to_mqtt", "Allow forwarding to MQTT", "bool"),
         ),
     ),
@@ -201,7 +190,6 @@ FIELDS: tuple[tuple[str, tuple[Field, ...]], ...] = (
             Field("position.latitude", "Latitude", "float", "degrees, north positive", minimum=-90, maximum=90),
             Field("position.longitude", "Longitude", "float", "degrees, east positive", minimum=-180, maximum=180),
             Field("position.altitude", "Altitude", "int", "metres above sea level", minimum=-500, maximum=9000),
-            Field("config.position.position_broadcast_secs", "Broadcast interval", "int", "seconds, 43200 = 12 hours", minimum=3600, maximum=4_294_967),
         ),
     ),
     (

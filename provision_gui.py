@@ -105,7 +105,9 @@ class Window(QMainWindow):
         alert = QLabel(
             "meshtastic-desktop is running.\n\n"
             "Quit it to prepare a node: it holds the node's USB port.\n"
-            "This window goes on by itself once it is closed."
+            "Closing its window only hides it in the system tray: quit it from\n"
+            "the tray icon's menu.\n"
+            "This window goes on by itself once it has quit."
         )
         alert.setAlignment(Qt.AlignmentFlag.AlignCenter)
         alert.setWordWrap(True)

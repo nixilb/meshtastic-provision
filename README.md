@@ -225,6 +225,7 @@ and the icon.
 | `wifi.py` | The Wi-Fi networks this computer sees (NetworkManager), for the Nearby menu |
 | `node-profile.example.yaml` | Documented example profile |
 | `doc/node-setup.md` | The manual set-up of the first node, which the profile automates |
+| `doc/Usages.md` | What Meshtastic is used for and how it answers each need (in French) |
 | `~/.config/meshtastic/node-profile.yaml` | The settings: saved by the window, default profile of the command line |
 | `~/.config/meshtastic/backups/` | Settings exported before a flash (window) |
 | `~/.cache/meshtastic-provision/` | Downloaded firmware images |

@@ -169,3 +169,16 @@ antenna before concluding that nobody is in range.
   Device settings.
 - Log out and back in so `dialout` applies to the session and the app can
   be launched without `sg`.
+
+
+avec l'exemple de profil, et je l'ai regardé. Les nouveaux champs s'affichent correctement, cochés et avec leur aide :
+
+« Screen timeout » (60) dans le groupe Node ;
+« Broadcast interval » (43200) dans Position ;
+« Public map: include the position » et « position precision » (15, limitée à 12–15) dans MQTT ;
+« Map background » dans la section de l'app.
+
+La fenêtre affiche ton propre profil, ~/.config/meshtastic/node-profile.yaml :
+
+Précision de la carte : ton fichier contient 32, mais le champ n'accepte plus que 12 à 15 et affichera 15. Ce 15 sera écrit à ta prochaine sauvegarde.
+« Public map: include the position » : cette case sera décochée. Coche-la avant de sauvegarder et de lancer le nœud, sinon NX02 n'apparaîtra toujours pas sur la carte publique.

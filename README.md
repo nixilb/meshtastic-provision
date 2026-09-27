@@ -134,8 +134,8 @@ fill in the Wi-Fi and broker secrets, and keep that copy out of any
 repository (`.gitignore` already excludes `node-profile.yaml` here).
 
 ```yaml
-owner: nixilb_01          # long name
-owner_short: NX01         # 4 characters at most
+owner: my-node-01         # long name
+owner_short: ND01         # 4 characters at most
 config:                   # sections and fields of config.proto
   lora:
     region: EU_868
@@ -178,8 +178,8 @@ Rules:
   (`Europe/Paris`) and converts with the system's time zone database.
 - `app`: meshtastic-desktop's own settings on this computer
   (`~/.config/meshtastic/settings.json`), the booleans `auto_connect`,
-  `mqtt_observer`, `mqtt_observer_all_regions`, `map_world_nodes` and
-  `map_gateway_links`. They are written after the node, together with the
+  `mqtt_observer`, `mqtt_observer_all_regions`, `map_world_nodes`,
+  `map_gateway_links` and `online_tiles`. They are written after the node, together with the
   node's port as the address the app connects to (`last_address`), keeping
   every other setting of the file. The app must not be running: it reads
   the file at start-up only and rewrites it when it saves.
@@ -233,3 +233,7 @@ and the icon.
 
 Backups are the meshtastic CLI's `--export-config` YAML, which
 `uvx meshtastic --port /dev/ttyUSB0 --configure <file>` restores.
+
+## License
+
+MIT, see [LICENSE](LICENSE).

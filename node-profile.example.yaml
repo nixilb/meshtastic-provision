@@ -13,8 +13,8 @@
 # (`psk`) are refused: the node keeps its own.
 
 # Node name (long) and short name (4 characters at most).
-owner: nixilb_01
-owner_short: NX01
+owner: my-node-01
+owner_short: ND01
 
 config:
   lora:
@@ -27,6 +27,14 @@ config:
   device:
     # POSIX time zone of the node's clock (Europe/Paris).
     tzdef: "CET-1CEST,M3.5.0,M10.5.0/3"
+  position:
+    # The node does not move: say where it is twice a day rather than
+    # hourly (the firmware's default and minimum).
+    position_broadcast_secs: 43200
+  display:
+    # Screen lit for a minute after a press or a message (10 by default);
+    # ignored by boards without a screen.
+    screen_on_secs: 60
   network:
     # Wi-Fi on: the node joins this network (fill in its name and
     # password). On an ESP32, Wi-Fi turns Bluetooth off; USB keeps working.
@@ -45,17 +53,22 @@ module_config:
     root: msh/EU_868
     # The app connects to the broker on the node's behalf.
     proxy_to_client_enabled: true
-    # Show the node on the public Meshtastic maps (hourly report, position
-    # in clear at the precision below, readable by anyone).
+    # Show the node on the public Meshtastic maps (position in clear at the
+    # precision below, readable by anyone).
     map_reporting_enabled: true
     map_report_settings:
+      # Consent to put the position in the reports: without it the firmware
+      # sends no map report at all (MQTT::perhapsReportToMap).
+      should_report_location: true
       # Once a day (and at every start-up), the firmware's minimum being an hour.
       publish_interval_secs: 86400
-      position_precision: 32
+      # 12 to 15 bits; the firmware replaces any other value with 14.
+      # 15 is the most precise it allows (about 730 m).
+      position_precision: 15
 
 channels:
   # Primary channel (LongFast with the default key): send to and receive
-  # from MQTT, positions on it rounded to precision 13 (~1.5 km).
+  # from MQTT, positions on it rounded to precision 13 (about 2.9 km).
   - index: 0
     role: PRIMARY
     settings:
@@ -77,3 +90,5 @@ app:
   # Map buttons: nodes seen through MQTT worldwide, links to their gateways.
   map_world_nodes: true
   map_gateway_links: true
+  # OpenStreetMap under the map (tiles downloaded as needed).
+  online_tiles: true

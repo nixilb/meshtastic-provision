@@ -81,6 +81,9 @@ TIPS: dict[str, str] = {
     "config.device.tzdef": "The node's time zone, so the times on its screen and in its logs are "
     "local, summer time included. Choose the zone of the place where the node is, named after its "
     "largest city (Europe/Paris for France). Type part of the name to find it.",
+    "config.display.screen_on_secs": "How long the node's small screen stays lit after a button "
+    "press or a message, in seconds. Ten minutes by default; a minute is enough for a node nobody "
+    "watches. Ignored by boards without a screen.",
     "config.lora.region": "The radio band the node may legally transmit on. It depends on the "
     "country: EU_868 for France and the European Union, US for North America, and so on. A node "
     "with no region set stays silent. A wrong region breaks the law and reaches no one.",
@@ -94,6 +97,9 @@ TIPS: dict[str, str] = {
     "has no GPS: it gives this fixed position to the mesh, rounded to the precisions set below. "
     "'My position' fills it from this computer's position; you can also copy it from an online map "
     "(right-click on the place).",
+    "config.position.position_broadcast_secs": "How often the node tells the mesh where it is, in "
+    "seconds. The firmware's default is every hour; a node that never moves can say it twice a "
+    "day (43200) or once (86400) and leave the airtime to messages. One hour is the minimum.",
     "position.longitude": "Where the node is, east-west, in degrees (2.3522 for Paris; negative west "
     "of Greenwich).",
     "position.altitude": "The node's height above sea level, in metres. Optional: leave it unticked "
@@ -128,9 +134,12 @@ TIPS: dict[str, str] = {
     "module_config.mqtt.map_report_settings.publish_interval_secs": "How often the node updates its "
     "place on the public map, in seconds: 86400 is once a day, the default. The node also reports "
     "at every start-up. The firmware allows one hour (3600) to about 49 days.",
+    "module_config.mqtt.map_report_settings.should_report_location": "Your consent to put the "
+    "node's position in its public map reports. Without it the node sends no map report at all, "
+    "so it stays off the public maps even with the setting above on.",
     "module_config.mqtt.map_report_settings.position_precision": "How precisely the public map "
-    "shows your position, in bits: 32 is exact, 16 about 700 m, 13 about 1.5 km, 11 about 6 km. "
-    "Lower is more private.",
+    "shows your position, in bits: 15 is about 730 m, 14 about 1.5 km, 13 about 2.9 km, 12 about "
+    "5.8 km. The firmware accepts only 12 to 15 and uses 14 for anything else. Lower is more private.",
     "channels[0].role": "The main channel, the one everybody in the region shares (LongFast). "
     "Leave it PRIMARY.",
     "channels[0].settings.uplink_enabled": "Sends the messages of this channel to the Internet "
@@ -138,7 +147,7 @@ TIPS: dict[str, str] = {
     "channels[0].settings.downlink_enabled": "Lets the messages of this channel coming from the "
     "Internet (MQTT) reach your node. Needed to receive from beyond radio range.",
     "channels[0].settings.module_settings.position_precision": "How precisely your node shares its "
-    "position on this channel, in bits: 32 is exact, 16 about 700 m, 13 about 1.5 km, 0 shares "
+    "position on this channel, in bits: 32 is exact, 16 about 360 m, 13 about 2.9 km, 0 shares "
     "nothing. Everyone on the channel can see it.",
     "app.auto_connect": "meshtastic-desktop connects to this node by itself when it starts, and "
     "reconnects after the cable is unplugged and plugged back.",
@@ -148,6 +157,8 @@ TIPS: dict[str, str] = {
     "Shows many more nodes on the map; uses more of the Internet connection.",
     "app.map_world_nodes": "Shows on meshtastic-desktop's map the nodes heard through the Internet, "
     "not only those your radio heard.",
+    "app.online_tiles": "Draws the OpenStreetMap map (streets, towns, relief) under meshtastic-desktop's "
+    "nodes, downloading its tiles as needed. Without it the nodes sit on a blank background.",
     "app.map_gateway_links": "Draws on the map a line between each node and the Internet gateway "
     "that relayed it, to see how messages travel.",
 }
@@ -173,6 +184,7 @@ FIELDS: tuple[tuple[str, tuple[Field, ...]], ...] = (
             Field("owner", "Name", "str", "long name, shown in the mesh"),
             Field("owner_short", "Short name", "str", "4 characters at most"),
             Field("config.device.tzdef", "Time zone", "timezone", "type a city to search"),
+            Field("config.display.screen_on_secs", "Screen timeout", "int", "seconds, boards with a screen", minimum=1, maximum=4_294_967),
         ),
     ),
     (
@@ -189,6 +201,7 @@ FIELDS: tuple[tuple[str, tuple[Field, ...]], ...] = (
             Field("position.latitude", "Latitude", "float", "degrees, north positive", minimum=-90, maximum=90),
             Field("position.longitude", "Longitude", "float", "degrees, east positive", minimum=-180, maximum=180),
             Field("position.altitude", "Altitude", "int", "metres above sea level", minimum=-500, maximum=9000),
+            Field("config.position.position_broadcast_secs", "Broadcast interval", "int", "seconds, 43200 = 12 hours", minimum=3600, maximum=4_294_967),
         ),
     ),
     (
@@ -211,7 +224,8 @@ FIELDS: tuple[tuple[str, tuple[Field, ...]], ...] = (
             Field("module_config.mqtt.proxy_to_client_enabled", "Proxy through the app", "bool", "the app connects to the broker for the node"),
             Field("module_config.mqtt.map_reporting_enabled", "Show this node on the public map", "bool", "position in clear, readable by anyone"),
             Field("module_config.mqtt.map_report_settings.publish_interval_secs", "Public map: update interval", "int", "seconds, 86400 = a day", minimum=3600, maximum=4_294_967),
-            Field("module_config.mqtt.map_report_settings.position_precision", "Public map: position precision", "int", "1 to 32 bits", maximum=32),
+            Field("module_config.mqtt.map_report_settings.should_report_location", "Public map: include the position", "bool", "required for the node to appear"),
+            Field("module_config.mqtt.map_report_settings.position_precision", "Public map: position precision", "int", "12 to 15 bits, 15 is about 730 m", minimum=12, maximum=15),
         ),
     ),
     (
@@ -220,7 +234,7 @@ FIELDS: tuple[tuple[str, tuple[Field, ...]], ...] = (
             Field("channels[0].role", "Role", "enum", choices=_enum_names(channel_pb2.Channel.Role.DESCRIPTOR)),
             Field("channels[0].settings.uplink_enabled", "Send to MQTT", "bool"),
             Field("channels[0].settings.downlink_enabled", "Receive from MQTT", "bool"),
-            Field("channels[0].settings.module_settings.position_precision", "Position precision", "int", "bits, 13 is about 1.5 km", maximum=32),
+            Field("channels[0].settings.module_settings.position_precision", "Position precision", "int", "bits, 13 is about 2.9 km", maximum=32),
         ),
     ),
     (
@@ -231,6 +245,7 @@ FIELDS: tuple[tuple[str, tuple[Field, ...]], ...] = (
             Field("app.mqtt_observer_all_regions", "Observe every region", "bool", "nodes of every topic root on the map"),
             Field("app.map_world_nodes", "MQTT world on the map", "bool"),
             Field("app.map_gateway_links", "Gateway links on the map", "bool"),
+            Field("app.online_tiles", "Map background", "bool", "OpenStreetMap tiles, downloaded"),
         ),
     ),
 )
@@ -334,6 +349,11 @@ class _Row:
             self.widget.setChecked(bool(current))  # type: ignore[attr-defined]
         elif self.field.kind == "enum":
             index = self.widget.findText(str(current)) if current is not None else 0  # type: ignore[attr-defined]
+            if index < 0:
+                # A value the list leaves out: show it rather than silently
+                # replacing it with the first choice.
+                self.widget.addItem(str(current))  # type: ignore[attr-defined]
+                index = self.widget.count() - 1  # type: ignore[attr-defined]
             self.widget.setCurrentIndex(max(index, 0))  # type: ignore[attr-defined]
         elif self.field.kind == "int":
             self.widget.setValue(int(current) if current is not None else 0)  # type: ignore[attr-defined]

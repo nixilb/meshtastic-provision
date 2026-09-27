@@ -76,8 +76,8 @@ PROFILE_KEYS = {"owner", "owner_short", "config", "module_config", "channels", "
 POSITION_BOUNDS = {"latitude": (-90.0, 90.0), "longitude": (-180.0, 180.0), "altitude": (-500.0, 9000.0)}
 # meshtastic-desktop's settings a profile may set (`app` section): the
 # booleans of `~/.config/meshtastic/settings.json` that make the app use
-# the node and the broker (docs/node-setup.md, section 5).
-APP_SETTING_KEYS = {"auto_connect", "mqtt_observer", "mqtt_observer_all_regions", "map_world_nodes", "map_gateway_links"}
+# the node and the broker, and show the map (docs/node-setup.md, section 5).
+APP_SETTING_KEYS = {"auto_connect", "mqtt_observer", "mqtt_observer_all_regions", "map_world_nodes", "map_gateway_links", "online_tiles"}
 APP_SETTINGS_PATH = (
     Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "meshtastic" / "settings.json"
 )
